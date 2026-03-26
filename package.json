@@ -1,6 +1,6 @@
 {
-  "name": "libxmljs3",
-  "author": "Jesse Stilwell <jstilwell@virginia.edu>",
+  "name": "libxmljs4",
+  "author": "Jesse Stilwell <jesse.stilwell@gmail.com>",
   "contributors": [
     "marudor",
     "Jeff Smick",
@@ -20,10 +20,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/jstilwell/libxmljs3.git"
+    "url": "https://github.com/jstilwell/libxmljs4.git"
   },
   "bugs": {
-    "url": "https://github.com/jstilwell/libxmljs3/issues"
+    "url": "https://github.com/jstilwell/libxmljs4/issues"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

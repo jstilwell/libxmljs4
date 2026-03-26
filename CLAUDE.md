@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-libxmljs3 is a Node.js native addon providing LibXML2 bindings for JavaScript. Published as `libxmljs3` on npm. Forked from [libxmljs2](https://github.com/marudor/libxmljs2). It wraps the C library libxml2 (vendored in `vendor/libxml/`) via C++ using node-addon-api (N-API), with a TypeScript wrapper layer on top.
+libxmljs4 is a Node.js native addon providing LibXML2 bindings for JavaScript. Published as `libxmljs4` on npm. Forked from [libxmljs2](https://github.com/marudor/libxmljs2). It wraps the C library libxml2 (vendored in `vendor/libxml/`) via C++ using node-addon-api (N-API), with a TypeScript wrapper layer on top.
 
 ## Build & Test Commands
 

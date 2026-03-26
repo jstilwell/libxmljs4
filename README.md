@@ -1,4 +1,4 @@
-# Libxmljs3
+# Libxmljs4
 
 LibXML bindings for [node.js](http://nodejs.org/)
 
@@ -9,7 +9,7 @@ TypeScript definitions are included out of the box.
 ## Installation
 
 ```shell
-npm install libxmljs3
+npm install libxmljs4
 ```
 
 Prebuilt binaries are available for Windows, macOS, Linux, and Alpine. If a prebuild is not available for your platform, it will compile from source automatically (requires Python 3, `make`, and a C++ compiler — see [node-gyp prerequisites](https://github.com/TooTallNate/node-gyp#installation)).
@@ -18,16 +18,16 @@ Prebuilt binaries are available for Windows, macOS, Linux, and Alpine. If a preb
 
 ## Migrating from libxmljs2
 
-libxmljs3 starts at version `1.0.0` (forked from libxmljs2 `0.37.0`). The major version bump reflects breaking changes: removed API synonyms, a fully rewritten C++ binding layer, and a new package name. Update your install and imports:
+libxmljs4 starts at version `1.0.0` (forked from libxmljs2 `0.37.0`). The major version bump reflects breaking changes: removed API synonyms, a fully rewritten C++ binding layer, and a new package name. Update your install and imports:
 
 ```diff
 - npm install libxmljs2
-+ npm install libxmljs3
++ npm install libxmljs4
 ```
 
 ```diff
 - const libxmljs = require('libxmljs2');
-+ const libxmljs = require('libxmljs3');
++ const libxmljs = require('libxmljs4');
 ```
 
 ### Changes from libxmljs2
@@ -44,7 +44,7 @@ libxmljs3 starts at version `1.0.0` (forked from libxmljs2 `0.37.0`). The major 
 ### Parsing XML
 
 ```javascript
-const libxmljs = require('libxmljs3');
+const libxmljs = require('libxmljs4');
 
 const xmlDoc = libxmljs.parseXml(
   '<?xml version="1.0"?>' +
@@ -170,7 +170,7 @@ const isValid2 = xmlDoc.schematronValidate(schematronDoc);
 ### Utilities
 
 ```javascript
-libxmljs.version; // libxmljs3 package version
+libxmljs.version; // libxmljs4 package version
 libxmljs.libxml_version; // Underlying libxml2 version
 libxmljs.memoryUsage(); // Bytes allocated by libxml2
 libxmljs.nodeCount(); // Number of live XML nodes
@@ -178,20 +178,20 @@ libxmljs.nodeCount(); // Number of live XML nodes
 
 ## Support
 
-- [Wiki](https://github.com/jstilwell/libxmljs3/wiki)
-- [Examples](https://github.com/jstilwell/libxmljs3/tree/main/examples)
+- [Wiki](https://github.com/jstilwell/libxmljs4/wiki)
+- [Examples](https://github.com/jstilwell/libxmljs4/tree/main/examples)
 
 ## Contributing
 
-Start by checking out the [open issues](https://github.com/jstilwell/libxmljs3/issues).
+Start by checking out the [open issues](https://github.com/jstilwell/libxmljs4/issues).
 
 ### Build from Source
 
 Prerequisites: Python 3, `make`, C++ compiler (`g++` or equivalent).
 
 ```shell
-git clone https://github.com/jstilwell/libxmljs3.git
-cd libxmljs3
+git clone https://github.com/jstilwell/libxmljs4.git
+cd libxmljs4
 pnpm install --build-from-source
 pnpm test
 ```
