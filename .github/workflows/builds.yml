@@ -105,8 +105,9 @@ jobs:
           path: prebuilds
           pattern: "*-prebuild"
           merge-multiple: true
+      - run: find prebuilds -type f | head -50
       - uses: softprops/action-gh-release@v2
         with:
-          files: ./prebuilds/**/*
+          files: ./prebuilds/**/*.node
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
