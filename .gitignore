@@ -1,6 +1,7 @@
 !CLAUDE.md
 .lock-wscript
 *.swp
+bin/
 build/
 dist/
 node_modules/
