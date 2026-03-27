@@ -614,31 +614,36 @@ Napi::Value XmlNode::ToString_Method(const Napi::CallbackInfo& info) {
       Napi::Object obj = info[0].As<Napi::Object>();
 
       // drop the XML declaration
-      if (obj.Has("declaration") && obj.Get("declaration").IsBoolean() &&
-          !obj.Get("declaration").As<Napi::Boolean>().Value()) {
+      Napi::Value declarationVal = obj.Get("declaration");
+      if (declarationVal.IsBoolean() &&
+          !declarationVal.As<Napi::Boolean>().Value()) {
         options |= XML_SAVE_NO_DECL;
       }
 
       // format output
-      if (obj.Has("format") && obj.Get("format").IsBoolean() &&
-          obj.Get("format").As<Napi::Boolean>().Value()) {
+      Napi::Value formatVal = obj.Get("format");
+      if (formatVal.IsBoolean() &&
+          formatVal.As<Napi::Boolean>().Value()) {
         options |= XML_SAVE_FORMAT;
       }
 
       // no empty tags (only XML)
-      if (obj.Has("selfCloseEmpty") && obj.Get("selfCloseEmpty").IsBoolean() &&
-          !obj.Get("selfCloseEmpty").As<Napi::Boolean>().Value()) {
+      Napi::Value selfCloseVal = obj.Get("selfCloseEmpty");
+      if (selfCloseVal.IsBoolean() &&
+          !selfCloseVal.As<Napi::Boolean>().Value()) {
         options |= XML_SAVE_NO_EMPTY;
       }
 
       // non-significant whitespace
-      if (obj.Has("whitespace") && obj.Get("whitespace").IsBoolean() &&
-          obj.Get("whitespace").As<Napi::Boolean>().Value()) {
+      Napi::Value whitespaceVal = obj.Get("whitespace");
+      if (whitespaceVal.IsBoolean() &&
+          whitespaceVal.As<Napi::Boolean>().Value()) {
         options |= XML_SAVE_WSNONSIG;
       }
 
-      if (obj.Has("type") && obj.Get("type").IsString()) {
-        std::string type_str = obj.Get("type").As<Napi::String>().Utf8Value();
+      Napi::Value typeVal = obj.Get("type");
+      if (typeVal.IsString()) {
+        std::string type_str = typeVal.As<Napi::String>().Utf8Value();
         if (type_str == "XML" || type_str == "xml") {
           options |= XML_SAVE_AS_XML;
         } else if (type_str == "HTML" || type_str == "html") {

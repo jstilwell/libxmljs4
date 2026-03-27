@@ -38,6 +38,9 @@ libxmljs4 starts at version `1.0.0` (forked from libxmljs2 `0.37.0`). The major 
 - **ESM support**: Both `require()` and `import` work via the `exports` field in package.json.
 - **Removed compatibility synonyms**: `parseXmlString` (use `parseXml`), `parseHtmlString` (use `parseHtml`), `Document.fromXmlString` (use `Document.fromXml`), `Document.fromHtmlString` (use `Document.fromHtml`).
 - **Replaced `bindings` package**: Native addon loading no longer depends on the `bindings` npm package.
+- **Renamed package**: Published as `libxmljs4` (previously `libxmljs3`, forked from `libxmljs2`).
+- **Optimized native toString()**: Element and node `toString()` option parsing now caches property lookups instead of repeatedly querying the options object.
+- **Smaller npm package**: Disabled source maps and declaration maps from the published dist files.
 
 ## API Overview
 
@@ -178,7 +181,7 @@ libxmljs.nodeCount(); // Number of live XML nodes
 
 ## Support
 
-- [Wiki](https://github.com/jstilwell/libxmljs4/wiki)
+- [GitHub Discussions](https://github.com/jstilwell/libxmljs4/discussions)
 - [Examples](https://github.com/jstilwell/libxmljs4/tree/main/examples)
 
 ## Contributing
