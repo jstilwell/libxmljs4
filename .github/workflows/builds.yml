@@ -33,9 +33,11 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: ${{ matrix.node }}
-      # Node 25 and later no longer bundle corepack.
+      # Node 25 and later no longer bundle corepack. --force lets it replace
+      # the yarn/pnpm shims preinstalled on Windows runners (EEXIST
+      # otherwise), which `corepack enable` below would take over anyway.
       - if: matrix.node >= 26
-        run: npm install -g corepack@0.36.0
+        run: npm install -g corepack@0.36.0 --force
       - run: corepack enable
       - run: pnpm i --frozen-lockfile
         env:
