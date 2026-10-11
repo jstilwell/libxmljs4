@@ -68,6 +68,18 @@ jobs:
         env:
           npm_config_build_from_source: true
       - run: pnpm prebuild
+      - run: pnpm build:ts
+      # Load the binary just built. With build/ removed, node-gyp-build can
+      # only resolve it from prebuilds/. Every runner in this matrix builds
+      # for its own architecture (none cross-compile), so each prebuild can
+      # be loaded where it was built. One command per step: a multi-line
+      # PowerShell step only fails on the last command's exit code.
+      - run: |
+          node -e "require('fs').rmSync('build', { recursive: true, force: true })"
+      - run: |
+          node -e "console.log(require('node-gyp-build').path('.'))"
+      - run: |
+          node -e "const l=require('./index.js'); if (l.parseXml('<a/>').root().name()!=='a') process.exit(1)"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ${{ matrix.os }}-prebuild
@@ -92,6 +104,13 @@ jobs:
       - run: pnpm tsd
       - run: pnpm test
       - run: pnpm prebuild
+      # Load the musl prebuild just built, as in the prebuild job above.
+      - run: |
+          node -e "require('fs').rmSync('build', { recursive: true, force: true })"
+      - run: |
+          node -e "console.log(require('node-gyp-build').path('.'))"
+      - run: |
+          node -e "const l=require('./index.js'); if (l.parseXml('<a/>').root().name()!=='a') process.exit(1)"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: matrix.node == 24
         with:
