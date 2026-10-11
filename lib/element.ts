@@ -1,7 +1,11 @@
 import bindings from './bindings';
-import type { StringMap } from './types';
+import type {
+  ElementConstructor,
+  Element as ElementInstance,
+  StringMap,
+} from './types';
 
-export function Element(doc: any, name: string, content?: string): any {
+function Element(doc: any, name: string, content?: string): any {
   if (!doc) {
     throw new Error('document argument required');
   } else if (!(doc instanceof bindings.Document)) {
@@ -64,3 +68,9 @@ Element.prototype.defineNamespace = function defineNamespace(
   }
   return new bindings.Namespace(this, prefix, href);
 };
+
+// The function above is callable with or without `new` (it returns the
+// native element either way); export it with that public type.
+const TypedElement = Element as unknown as ElementConstructor;
+export { TypedElement as Element };
+export type Element = ElementInstance;
