@@ -40,6 +40,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The documented `old` parser option now works**, as an alias for `old10`.
   It was silently ignored.
 
+- **README rewritten** to be shorter and organized by task. It also
+  corrects facts that were wrong: macOS prebuilds are Apple silicon only
+  (Intel Macs compile on install), the supported Node.js range, and the
+  build-from-source steps, which were missing `pnpm build:ts`.
+
 ### Fixed
 
 - `parseXml` and `parseHtml` read a `DataView` source as bytes instead of
