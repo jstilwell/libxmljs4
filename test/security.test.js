@@ -275,12 +275,15 @@ describe('security regressions', () => {
       const fs = require('node:fs');
       const os = require('node:os');
       const path = require('node:path');
+      const { pathToFileURL } = require('node:url');
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'libxmljs4-dtd-'));
+      // A file URL, because libxml2 cannot resolve relative to a Windows path.
+      const baseUrl = pathToFileURL(path.join(dir, 'x.xml')).href;
       fs.writeFileSync(path.join(dir, 'ext.dtd'), '<!ENTITY e "from-ext">');
       const xml = '<!DOCTYPE r SYSTEM "ext.dtd"><r>&e;</r>';
       // The external DTD declares the entity, so it resolves only if loaded.
       const loaded = (opts) => !libxml
-        .parseXml(xml, { baseUrl: path.join(dir, 'x.xml'), recover: true, ...opts })
+        .parseXml(xml, { baseUrl, recover: true, ...opts })
         .errors.some((e) => /Entity 'e' not defined/.test(e.message));
       out([loaded({}), loaded({ doctype: false }), loaded({ implied: false })]);
       out(loaded({ dtdload: true }));
