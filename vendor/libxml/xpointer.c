@@ -962,6 +962,13 @@ xmlXPtrEvalXPtrPart(xmlXPathParserContextPtr ctxt, xmlChar *name) {
     level = 1;
 
     len = xmlStrlen(ctxt->cur);
+    /* Overflow in xmlStrlen */
+    if (len == 0 && ctxt->cur != NULL && *ctxt->cur != 0) {
+        xmlXPtrErrMemory("allocating buffer");
+        xmlFree(name);
+        return;
+    }
+
     len++;
     buffer = (xmlChar *) xmlMallocAtomic(len * sizeof (xmlChar));
     if (buffer == NULL) {
