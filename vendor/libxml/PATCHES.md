@@ -136,18 +136,48 @@ These CVEs are known but do not affect this tree, so there is nothing to apply:
   introduced by the CVE-2026-86137 fix. In this tree, `xmlRegNewParserCtxt`
   does not compute a string length.
 
+## Intentionally kept at pre-2.9.13 behavior
+
+Upstream 2.9.13 and 2.9.14 changed how the HTML parser handles malformed
+markup. None of those changes is a security fix. To keep `parseHtml` output
+byte-for-byte identical to earlier libxmljs4 releases, the following
+`HTMLparser.c` hunks from the 2.9.12 to 2.9.14 update were reverted to the
+previous vendored code:
+
+| Function | Reverted 2.9.13/2.9.14 change |
+|---|---|
+| `htmlParseStartTag` | Removal of the recover-mode branch that keeps `<` as text when it is followed by a blank, `<`, `=`, `>` or a digit. |
+| `htmlParseContent`, `htmlParseContentInternal` | Parsing a start tag only when `<` is followed by an ASCII letter, and emitting a literal `<` otherwise. Upstream commit 798bdf13, "Fix recovery from invalid HTML start tags". |
+| `htmlParseTryOrFinish` (push parser) | The same change for the push parser, replacing the earlier name-start check (letter, `_`, `:` or `.`) and its "invalid element name" error. |
+| `htmlParsePubidLiteral` | Closing a PUBLIC literal with its own quote character ("Fix regression parsing public IDs literals in HTML"). Single-quoted PUBLIC identifiers still produce "Unfinished PubidLiteral", as before. |
+
+As a result, the old malformed-HTML handling is preserved:
+
+- **Stray `<`.** A `<` that is not followed by a valid name start reports
+  `htmlParseStartTag: invalid element name`. Outside recover mode, the
+  parser drops everything up to the next `>`. In recover mode, `<` followed
+  by a blank, `=`, `>` or a digit is kept as text.
+- **Odd tag names.** `<_x>`, `<:b>` and `<.y>` are parsed as elements, and
+  each reports `Tag … invalid`.
+- **`<![CDATA[…]]>` and `<!ELEMENT …>` in HTML** are dropped, not turned
+  into text.
+
+Every other `HTMLparser.c` change from 2.9.14 and the patch series is kept:
+
+- the `htmlSkipBlankChars` integer-overflow fix
+- the input-buffer leak fix in `htmlCreateMemoryParserCtxt`
+- `Also-reset-nsNr-in-htmlCtxtReset` (CVE-2022-2309)
+- the CVE-2025-7425 `XML_DOC_SET_PROPERTIES` hunk
+- the `htmlReadFd` fixes. This function is not used by libxmljs4.
+- the registration of HTML document nodes with `xmlRegisterNodeDefault`,
+  which keeps `nodeCount()` balanced for HTML documents. This does not
+  change parse output.
+
 ## Behaviour notes
 
 These changes come from the base update and the patches. Users can observe
 them:
 
-- **HTML parser (2.9.13/2.9.14 upstream).** A `<` that is not followed by an
-  ASCII letter is now kept as literal text. Previously, outside recover mode,
-  everything up to the next `>` was silently dropped. Tags such as `<_x>`,
-  `<:b>` and `<.y>` are now text rather than elements. `<![CDATA[...]]>` and
-  `<!ELEMENT ...>` in HTML input are kept as text. The `htmlParseStartTag:
-  invalid element name` error is no longer reported. A single-quoted
-  `PUBLIC` identifier in an HTML DOCTYPE now parses correctly.
 - **Entity amplification (CVE-2026-6653 backport, upstream 2.11 design).**
   Entity expansion is now measured by expanded size. Parsing fails with
   "Maximum entity amplification factor exceeded" when the total exceeds

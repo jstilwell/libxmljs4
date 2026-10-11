@@ -3048,7 +3048,7 @@ htmlParsePubidLiteral(htmlParserCtxtPtr ctxt) {
         NEXT;
     }
 
-    if (CUR != quote) {
+    if (CUR != '"') {
         htmlParseErr(ctxt, XML_ERR_LITERAL_NOT_FINISHED,
                      "Unfinished PubidLiteral\n", NULL, NULL);
     } else {
@@ -3961,6 +3961,14 @@ htmlParseStartTag(htmlParserCtxtPtr ctxt) {
 	htmlParseErr(ctxt, XML_ERR_NAME_REQUIRED,
 	             "htmlParseStartTag: invalid element name\n",
 		     NULL, NULL);
+	/* if recover preserve text on classic misconstructs */
+	if ((ctxt->recovery) && ((IS_BLANK_CH(CUR)) || (CUR == '<') ||
+	    (CUR == '=') || (CUR == '>') || (((CUR >= '0') && (CUR <= '9'))))) {
+	    htmlParseCharDataInternal(ctxt, '<');
+	    return(-1);
+	}
+
+
 	/* Dump the bogus tag like browsers do */
 	while ((CUR != 0) && (CUR != '>') &&
                (ctxt->instate != XML_PARSER_EOF))
@@ -4413,14 +4421,8 @@ htmlParseContent(htmlParserCtxtPtr ctxt) {
 	    /*
 	     * Third case :  a sub-element.
 	     */
-	    else if ((CUR == '<') && IS_ASCII_LETTER(NXT(1))) {
-		htmlParseElement(ctxt);
-	    }
 	    else if (CUR == '<') {
-                if ((ctxt->sax != NULL) && (!ctxt->disableSAX) &&
-                    (ctxt->sax->characters != NULL))
-                    ctxt->sax->characters(ctxt->userData, BAD_CAST "<", 1);
-                NEXT;
+		htmlParseElement(ctxt);
 	    }
 
 	    /*
@@ -4818,19 +4820,13 @@ htmlParseContentInternal(htmlParserCtxtPtr ctxt) {
 	    /*
 	     * Third case :  a sub-element.
 	     */
-	    else if ((CUR == '<') && IS_ASCII_LETTER(NXT(1))) {
+	    else if (CUR == '<') {
 		htmlParseElementInternal(ctxt);
 		if (currentNode != NULL) xmlFree(currentNode);
 
 		currentNode = xmlStrdup(ctxt->name);
 		depth = ctxt->nameNr;
 	    }
-	    else if (CUR == '<') {
-                if ((ctxt->sax != NULL) && (!ctxt->disableSAX) &&
-                    (ctxt->sax->characters != NULL))
-                    ctxt->sax->characters(ctxt->userData, BAD_CAST "<", 1);
-                NEXT;
-            }
 
 	    /*
 	     * Fourth case : a reference. If if has not been resolved,
@@ -5997,22 +5993,36 @@ htmlParseTryOrFinish(htmlParserCtxtPtr ctxt, int terminate) {
 				"HPP: entering END_TAG\n");
 #endif
 			break;
-		    } else if ((cur == '<') && IS_ASCII_LETTER(next)) {
+		    } else if (cur == '<') {
                         if ((!terminate) && (next == 0))
                             goto done;
-                        ctxt->instate = XML_PARSER_START_TAG;
-                        ctxt->checkIndex = 0;
+                        /*
+                         * Only switch to START_TAG if the next character
+                         * starts a valid name. Otherwise, htmlParseStartTag
+                         * might return without consuming all characters
+                         * up to the final '>'.
+                         */
+                        if ((IS_ASCII_LETTER(next)) ||
+                            (next == '_') || (next == ':') || (next == '.')) {
+                            ctxt->instate = XML_PARSER_START_TAG;
+                            ctxt->checkIndex = 0;
 #ifdef DEBUG_PUSH
-                        xmlGenericError(xmlGenericErrorContext,
-                                "HPP: entering START_TAG\n");
+                            xmlGenericError(xmlGenericErrorContext,
+                                    "HPP: entering START_TAG\n");
 #endif
+                        } else {
+                            htmlParseErr(ctxt, XML_ERR_NAME_REQUIRED,
+                                         "htmlParseTryOrFinish: "
+                                         "invalid element name\n",
+                                         NULL, NULL);
+                            htmlCheckParagraph(ctxt);
+                            if ((ctxt->sax != NULL) &&
+                                (ctxt->sax->characters != NULL))
+                                ctxt->sax->characters(ctxt->userData,
+                                                      in->cur, 1);
+                            NEXT;
+                        }
 			break;
-		    } else if (cur == '<') {
-                        if ((ctxt->sax != NULL) && (!ctxt->disableSAX) &&
-                            (ctxt->sax->characters != NULL))
-			    ctxt->sax->characters(ctxt->userData,
-						  BAD_CAST "<", 1);
-                        NEXT;
 		    } else {
 		        /*
 			 * check that the text sequence is complete
