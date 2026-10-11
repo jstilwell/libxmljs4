@@ -44,6 +44,8 @@ libxmljs4 starts at version `1.0.0` (forked from libxmljs2 `0.37.0`). The major 
 - **`namespace()` validates its href**: Passing a non-string href (for example `el.namespace('pref', null)`) throws a `TypeError`. In libxmljs2 this aborted the process with a fatal N-API error. The single-argument `namespace(null)` form still removes the namespace.
 - **Narrower Node.js support**: `engines.node` is `^22.22.2 || ^24.15.0 || >=26`.
 - **`node-gyp` is not a runtime dependency**: It is only needed to build from source, so it moved to `devDependencies`. Installing this package no longer pulls it in.
+- **`parseHtmlFragment` leaves its options object unchanged**: libxmljs2 set `doctype` and `implied` to `false` on the object the caller passed in.
+- **SAX parsers are `instanceof EventEmitter`**: `SaxParser` and `SaxPushParser` instances have `EventEmitter.prototype` on their prototype chain. libxmljs2 only copied the EventEmitter methods onto them.
 
 See [CHANGELOG.md](CHANGELOG.md) for the full release history.
 
