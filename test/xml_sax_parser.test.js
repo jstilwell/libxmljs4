@@ -181,4 +181,29 @@ describe('xml sax parser', () => {
       parser.parseString(str);
     }
   });
+
+  it('parsers are EventEmitter instances', () => {
+    const { EventEmitter } = require('node:events');
+
+    for (const parserType of ['SaxParser', 'SaxPushParser']) {
+      const parser = libxml[parserType]();
+      const elements = [];
+
+      expect(parser).toBeInstanceOf(EventEmitter);
+      // The methods are still own properties of the native prototype.
+      const proto = Object.getPrototypeOf(parser);
+      expect(Object.hasOwn(proto, 'on')).toBe(true);
+      expect(proto.on).toBe(EventEmitter.prototype.on);
+
+      parser.once('startElementNS', (name) => elements.push(name));
+      expect(parser.listenerCount('startElementNS')).toBe(1);
+      if (parserType === 'SaxParser') {
+        parser.parseString('<a><b/></a>');
+      } else {
+        parser.push('<a><b/></a>', true);
+      }
+      expect(elements).toEqual(['a']);
+      expect(parser.listenerCount('startElementNS')).toBe(0);
+    }
+  });
 });
