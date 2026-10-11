@@ -36,6 +36,9 @@ libxmljs4 starts at version `1.0.0` (forked from libxmljs2 `0.37.0`). The major 
 - **Patched libxml2**: The bundled libxml2 is 2.9.14 with Debian's and Ubuntu's security backports applied (see `vendor/libxml/PATCHES.md`), and `libxml_version` reports `2.9.14`. libxmljs2 shipped an unpatched mid-2021 snapshot that reported itself as 2.9.9. Two backported fixes reject inputs libxmljs2 accepted: entity expansion beyond 10 MB that is also more than 10 times the input size fails with "Maximum entity amplification factor exceeded" (also with `huge`), and without `huge`, CDATA sections over 10,000,000 bytes and quoted literals or NMTOKENs over 50,000 characters are rejected. HTML parsing output is unchanged.
 - **XPath namespace and document nodes**: `find('//namespace::*')` returns `Namespace` objects, and an XPath that selects the document node (for example `find('..')` from the root) returns the `Document`. In libxmljs2 both crashed the process.
 - **Invalid arguments throw**: Passing the wrong kind of value, such as `parseXml(null)`, `addChild(null)`, or a non-node to `addNextSibling()`, throws a `TypeError` instead of crashing. String arguments are still converted with `String(value)` as in libxmljs2, so `attr('count', 5)` sets `count="5"`.
+- **Error lists are capped**: `doc.errors` and `doc.validationErrors` hold at most 10,000 entries by default, set by the `maxErrors` option. libxmljs2 built a JS `Error` for every libxml2 diagnostic, so a small malformed input could use hundreds of megabytes.
+- **`old` works**: The documented `old` parser option is an alias for `old10`. In libxmljs2 it was silently ignored.
+- **`SaxTransform` reports listener errors at end of input**: An exception thrown by a listener during the final push (for example in an `endDocument` handler) fails the stream, as it already did for earlier chunks. libxmljs2 swallowed it.
 - **SAX re-entrancy**: Calling `parseString()` or `push()` from inside one of the same parser's event handlers throws an `Error`. Parsing an empty string emits an `error` event.
 - **Node-API (N-API)**: Native addon now uses ABI-stable Node-API instead of NAN. Prebuilt binaries work across Node.js versions without recompilation.
 - **TypeScript source**: The JS wrapper layer is now written in TypeScript with generated type definitions.
@@ -94,7 +97,9 @@ const doc = libxmljs.parseXml(xml, {
 });
 ```
 
-Other options: `noent`, `dtdload`, `dtdattr`, `dtdvalid`, `xinclude`, `huge`, `noerror`, `nowarning`, `pedantic`, `sax1`, `nodict`, `nsclean`, `nocdata`, `compact`, `old`, `nobasefix`, `big_lines`, `ignore_enc`.
+Other options: `noent`, `dtdload`, `dtdattr`, `dtdvalid`, `xinclude`, `huge`, `noerror`, `nowarning`, `pedantic`, `sax1`, `nodict`, `nsclean`, `nocdata`, `compact`, `old10` (or its alias `old`), `nobasefix`, `big_lines`, `ignore_enc`.
+
+Parse errors are collected in `doc.errors`, up to `maxErrors` entries (default `10000`; pass `Infinity` for no limit). `validate()`, `rngValidate()`, and `schematronValidate()` take the same option as an optional second argument, for example `doc.validate(xsd, { maxErrors: 100 })`, and limit `doc.validationErrors` the same way.
 
 Read [Security considerations](#security-considerations) before enabling `noent`, `dtdload`, `dtdattr`, `dtdvalid`, `xinclude`, or `huge`.
 

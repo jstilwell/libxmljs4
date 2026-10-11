@@ -2,10 +2,10 @@ const { SaxTransform } = require('../index');
 const { once } = require('node:events');
 const { Readable } = require('node:stream');
 
-// Assertions run after the stream finishes, not inside SAX listeners. A
-// listener that throws during the final push is swallowed by _flush, so an
-// assertion made there could never fail the test. Vitest also does not
-// supply a `done` callback; a test's first argument is its context object.
+// Assertions run after the stream finishes, not inside SAX listeners, so a
+// failed assertion shows up as the stream's error rather than an unrelated
+// one. Vitest also does not supply a `done` callback; a test's first
+// argument is its context object.
 
 describe('SaxTransform', () => {
   it('emits startDocument and endDocument', async () => {
@@ -115,5 +115,17 @@ describe('SaxTransform', () => {
 
     expect(ended).toBe(true);
     expect(text).toBe('héllo €');
+  });
+
+  it('fails the stream when a listener throws during the final push', async () => {
+    const transform = new SaxTransform();
+    transform.on('endDocument', () => {
+      throw new Error('listener failed');
+    });
+
+    transform.end('<root/>');
+    const [err] = await once(transform, 'error');
+
+    expect(err.message).toBe('listener failed');
   });
 });
