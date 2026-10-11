@@ -12,7 +12,7 @@ class XmlElement;
 class XmlAttribute : public Napi::ObjectWrap<XmlAttribute>, public XmlNode {
 public:
   using Napi::ObjectWrap<XmlAttribute>::Unwrap;
-  static Napi::FunctionReference constructor;
+  static Napi::FunctionReference &constructor(Napi::Env env);
 
   XmlAttribute(const Napi::CallbackInfo& info);
 

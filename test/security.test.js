@@ -229,6 +229,35 @@ describe('security regressions', () => {
     expect(res.values).toEqual([0]);
   });
 
+  it('the main thread keeps working after worker threads exit', () => {
+    const res = run(`
+      const { Worker } = require('node:worker_threads');
+      const entry = ${JSON.stringify(path.join(root, 'index.js'))};
+      const runWorker = () => new Promise((resolve, reject) => {
+        const w = new Worker(
+          'const l = require(' + JSON.stringify(entry) + ');' +
+          'require("node:worker_threads").parentPort.postMessage(' +
+          'l.parseXml("<w><x/></w>").get("//x").name());',
+          { eval: true }
+        );
+        w.once('message', resolve);
+        w.once('error', reject);
+      });
+      (async () => {
+        out(libxml.parseXml('<a/>').root().name());
+        for (let i = 0; i < 3; i++) {
+          out(await runWorker());
+          // Let the worker's env tear down before using the addon again.
+          await new Promise((r) => setTimeout(r, 50));
+          global.gc();
+          out(libxml.parseXml('<b><c/></b>').get('//c').name());
+        }
+      })();
+    `);
+    expectClean(res);
+    expect(res.values).toEqual(['a', 'x', 'c', 'x', 'c', 'x', 'c']);
+  });
+
   it('SAX parsers reject re-entrant calls and handle empty input', () => {
     const res = run(`
       const p = new libxml.SaxParser();

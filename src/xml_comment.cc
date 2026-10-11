@@ -5,9 +5,14 @@
 #include "xml_comment.h"
 #include "xml_document.h"
 
+#include "libxmljs.h"
+
 namespace libxmljs {
 
-Napi::FunctionReference XmlComment::constructor;
+// Per-env so each worker thread gets its own constructor reference.
+Napi::FunctionReference &XmlComment::constructor(Napi::Env env) {
+  return GetInstanceData(env)->comment;
+}
 
 XmlComment::XmlComment(const Napi::CallbackInfo& info)
     : Napi::ObjectWrap<XmlComment>(info), XmlNode(nullptr) {
@@ -24,7 +29,7 @@ XmlComment::XmlComment(const Napi::CallbackInfo& info)
   }
 
   if (!info[0].IsObject() ||
-      !info[0].As<Napi::Object>().InstanceOf(XmlDocument::constructor.Value())) {
+      !info[0].As<Napi::Object>().InstanceOf(XmlDocument::constructor(env).Value())) {
     Napi::Error::New(env, "document argument must be an instance of Document")
         .ThrowAsJavaScriptException();
     return;
@@ -61,7 +66,7 @@ Napi::Object XmlComment::New(Napi::Env env, xmlNode *node) {
     return existing->Value_();
   }
 
-  Napi::Object obj = constructor.New({});
+  Napi::Object obj = constructor(env).New({});
   XmlComment *wrapper = Napi::ObjectWrap<XmlComment>::Unwrap(obj);
   wrapper->xml_obj = node;
   node->_private = static_cast<XmlNode *>(wrapper);
@@ -123,8 +128,7 @@ void XmlComment::Init(Napi::Env env, Napi::Object exports) {
     InstanceMethod("text", &XmlComment::Text),
   });
 
-  constructor = Napi::Persistent(func);
-  constructor.SuppressDestruct();
+  constructor(env) = Napi::Persistent(func);
   exports.Set("Comment", func);
 }
 

@@ -5,9 +5,14 @@
 #include "xml_document.h"
 #include "xml_pi.h"
 
+#include "libxmljs.h"
+
 namespace libxmljs {
 
-Napi::FunctionReference XmlProcessingInstruction::constructor;
+// Per-env so each worker thread gets its own constructor reference.
+Napi::FunctionReference &XmlProcessingInstruction::constructor(Napi::Env env) {
+  return GetInstanceData(env)->pi;
+}
 
 XmlProcessingInstruction::XmlProcessingInstruction(const Napi::CallbackInfo& info)
     : Napi::ObjectWrap<XmlProcessingInstruction>(info), XmlNode(nullptr) {
@@ -24,7 +29,7 @@ XmlProcessingInstruction::XmlProcessingInstruction(const Napi::CallbackInfo& inf
   }
 
   if (!info[0].IsObject() ||
-      !info[0].As<Napi::Object>().InstanceOf(XmlDocument::constructor.Value())) {
+      !info[0].As<Napi::Object>().InstanceOf(XmlDocument::constructor(env).Value())) {
     Napi::Error::New(env, "document argument must be an instance of Document")
         .ThrowAsJavaScriptException();
     return;
@@ -78,7 +83,7 @@ Napi::Object XmlProcessingInstruction::New(Napi::Env env, xmlNode *node) {
     return existing->Value_();
   }
 
-  Napi::Object obj = constructor.New({});
+  Napi::Object obj = constructor(env).New({});
   XmlProcessingInstruction *wrapper =
       Napi::ObjectWrap<XmlProcessingInstruction>::Unwrap(obj);
   wrapper->xml_obj = node;
@@ -168,8 +173,7 @@ void XmlProcessingInstruction::Init(Napi::Env env, Napi::Object exports) {
     InstanceMethod("text", &XmlProcessingInstruction::Text),
   });
 
-  constructor = Napi::Persistent(func);
-  constructor.SuppressDestruct();
+  constructor(env) = Napi::Persistent(func);
   exports.Set("ProcessingInstruction", func);
 }
 

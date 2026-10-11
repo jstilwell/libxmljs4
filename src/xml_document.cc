@@ -24,9 +24,14 @@
 #include "xml_syntax_error.h"
 #include "xml_text.h"
 
+#include "libxmljs.h"
+
 namespace libxmljs {
 
-Napi::FunctionReference XmlDocument::constructor;
+// Per-env so each worker thread gets its own constructor reference.
+Napi::FunctionReference &XmlDocument::constructor(Napi::Env env) {
+  return GetInstanceData(env)->document;
+}
 
 Napi::Value XmlDocument::Encoding(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
@@ -268,7 +273,7 @@ Napi::Object XmlDocument::New(Napi::Env env, xmlDoc *doc) {
     return static_cast<XmlDocument *>(doc->_private)->Value();
   }
 
-  Napi::Object obj = constructor.New({});
+  Napi::Object obj = constructor(env).New({});
 
   XmlDocument *document = Napi::ObjectWrap<XmlDocument>::Unwrap(obj);
 
@@ -593,7 +598,7 @@ Napi::Value XmlDocument::Validate(const Napi::CallbackInfo& info) {
     return env.Null();
   }
   if (!info[0].IsObject() ||
-      !info[0].As<Napi::Object>().InstanceOf(constructor.Value())) {
+      !info[0].As<Napi::Object>().InstanceOf(constructor(env).Value())) {
     Napi::Error::New(env, "Must pass XmlDocument").ThrowAsJavaScriptException();
     return env.Null();
   }
@@ -650,7 +655,7 @@ Napi::Value XmlDocument::RngValidate(const Napi::CallbackInfo& info) {
     return env.Null();
   }
   if (!info[0].IsObject() ||
-      !info[0].As<Napi::Object>().InstanceOf(constructor.Value())) {
+      !info[0].As<Napi::Object>().InstanceOf(constructor(env).Value())) {
     Napi::Error::New(env, "Must pass XmlDocument").ThrowAsJavaScriptException();
     return env.Null();
   }
@@ -707,7 +712,7 @@ Napi::Value XmlDocument::SchematronValidate(const Napi::CallbackInfo& info) {
     return env.Null();
   }
   if (!info[0].IsObject() ||
-      !info[0].As<Napi::Object>().InstanceOf(constructor.Value())) {
+      !info[0].As<Napi::Object>().InstanceOf(constructor(env).Value())) {
     Napi::Error::New(env, "Must pass XmlDocument").ThrowAsJavaScriptException();
     return env.Null();
   }
@@ -799,8 +804,7 @@ void XmlDocument::Init(Napi::Env env, Napi::Object exports) {
     InstanceMethod("type", &XmlDocument::type),
   });
 
-  constructor = Napi::Persistent(func);
-  constructor.SuppressDestruct();
+  constructor(env) = Napi::Persistent(func);
 
   exports.Set("Document", func);
 

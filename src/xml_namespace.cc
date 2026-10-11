@@ -6,9 +6,14 @@
 #include "xml_namespace.h"
 #include "xml_node.h"
 
+#include "libxmljs.h"
+
 namespace libxmljs {
 
-Napi::FunctionReference XmlNamespace::constructor;
+// Per-env so each worker thread gets its own constructor reference.
+Napi::FunctionReference &XmlNamespace::constructor(Napi::Env env) {
+  return GetInstanceData(env)->ns;
+}
 
 // JS constructor: new Namespace(node, prefix, href)
 // Also invoked with zero arguments from the C++ factory path (XmlNamespace::New)
@@ -125,7 +130,7 @@ Napi::Object XmlNamespace::New(Napi::Env env, xmlNs *ns) {
 
   // Create a new JS wrapper via the zero-argument constructor, then attach
   // the native pointer.
-  Napi::Object obj = constructor.New({});
+  Napi::Object obj = constructor(env).New({});
   XmlNamespace *wrapper = XmlNamespace::Unwrap(obj);
   wrapper->initFromNative(ns);
   return obj;
@@ -164,8 +169,7 @@ void XmlNamespace::Init(Napi::Env env, Napi::Object exports) {
     InstanceMethod("prefix", &XmlNamespace::Prefix),
   });
 
-  constructor = Napi::Persistent(func);
-  constructor.SuppressDestruct();
+  constructor(env) = Napi::Persistent(func);
 
   exports.Set("Namespace", func);
 }

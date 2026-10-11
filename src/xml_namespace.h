@@ -13,7 +13,7 @@ public:
 
   xmlDoc *context; // reference-managed context
 
-  static Napi::FunctionReference constructor;
+  static Napi::FunctionReference &constructor(Napi::Env env);
 
   XmlNamespace(const Napi::CallbackInfo& info);
   ~XmlNamespace();

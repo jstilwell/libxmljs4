@@ -27,7 +27,7 @@
     return;                                                                    \
   }                                                                            \
   Napi::Object doc = info[0].As<Napi::Object>();                               \
-  if (!info[0].InstanceOf(XmlDocument::constructor.Value())) {                 \
+  if (!info[0].InstanceOf(XmlDocument::constructor(info.Env()).Value())) {                 \
     Napi::Error::New(info.Env(),                                               \
                      "document argument must be an instance of Document")      \
         .ThrowAsJavaScriptException();                                         \
@@ -35,6 +35,26 @@
   }
 
 namespace libxmljs {
+
+// JS constructors for each wrapper class. Node-API gives every env (the main
+// thread and each worker thread) its own copy; process-wide statics would be
+// overwritten by each worker and left dangling when it exits.
+struct InstanceData {
+  Napi::FunctionReference document;
+  Napi::FunctionReference element;
+  Napi::FunctionReference attribute;
+  Napi::FunctionReference text;
+  Napi::FunctionReference comment;
+  Napi::FunctionReference pi;
+  Napi::FunctionReference ns;
+  Napi::FunctionReference sax_parser;
+  Napi::FunctionReference sax_push_parser;
+  Napi::FunctionReference text_writer;
+};
+
+inline InstanceData *GetInstanceData(Napi::Env env) {
+  return env.GetInstanceData<InstanceData>();
+}
 
 #ifdef LIBXML_DEBUG_ENABLED
 static const bool debugging = true;
