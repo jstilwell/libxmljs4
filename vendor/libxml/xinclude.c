@@ -1883,6 +1883,7 @@ xmlXIncludeLoadTxt(xmlXIncludeCtxtPtr ctxt, const xmlChar *url, int nr) {
      * Load it.
      */
     pctxt = xmlNewParserCtxt();
+    xmlCtxtUseOptions(pctxt, ctxt->parseFlags);
     inputStream = xmlLoadExternalEntity((const char*)URL, NULL, pctxt);
     if(inputStream == NULL) {
 	xmlFreeParserCtxt(pctxt);
@@ -2579,7 +2580,7 @@ xmlXIncludeProcessFlags(xmlDocPtr doc, int flags) {
  */
 int
 xmlXIncludeProcess(xmlDocPtr doc) {
-    return(xmlXIncludeProcessFlags(doc, 0));
+    return(xmlXIncludeProcessFlags(doc, doc ? doc->parseFlags : 0));
 }
 
 /**
@@ -2624,7 +2625,7 @@ xmlXIncludeProcessTreeFlags(xmlNodePtr tree, int flags) {
  */
 int
 xmlXIncludeProcessTree(xmlNodePtr tree) {
-    return(xmlXIncludeProcessTreeFlags(tree, 0));
+    return(xmlXIncludeProcessTreeFlags(tree, (tree && tree->doc) ? tree->doc->parseFlags : 0));
 }
 
 /**
