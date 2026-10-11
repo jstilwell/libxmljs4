@@ -10,7 +10,7 @@ namespace libxmljs {
 class XmlComment : public Napi::ObjectWrap<XmlComment>, public XmlNode {
 public:
   using Napi::ObjectWrap<XmlComment>::Unwrap;
-  static Napi::FunctionReference constructor;
+  static Napi::FunctionReference &constructor(Napi::Env env);
 
   XmlComment(const Napi::CallbackInfo& info);
 

@@ -12,7 +12,7 @@ namespace libxmljs {
 class XmlElement : public Napi::ObjectWrap<XmlElement>, public XmlNode {
 public:
   using Napi::ObjectWrap<XmlElement>::Unwrap;
-  static Napi::FunctionReference constructor;
+  static Napi::FunctionReference &constructor(Napi::Env env);
 
   XmlElement(const Napi::CallbackInfo& info);
 

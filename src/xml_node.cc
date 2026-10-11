@@ -6,6 +6,7 @@
 
 #include <libxml/xmlsave.h>
 
+#include "libxmljs.h"
 #include "xml_attribute.h"
 #include "xml_comment.h"
 #include "xml_document.h"
@@ -621,7 +622,7 @@ Napi::Value XmlNode::Namespace_Method(const Napi::CallbackInfo& info) {
 
   // namespace(nsObj) — an XmlNamespace JS object was provided
   if (info[0].IsObject() &&
-      info[0].As<Napi::Object>().InstanceOf(XmlNamespace::constructor.Value())) {
+      info[0].As<Napi::Object>().InstanceOf(XmlNamespace::constructor(env).Value())) {
     ns = Napi::ObjectWrap<XmlNamespace>::Unwrap(info[0].As<Napi::Object>());
   }
 
@@ -659,7 +660,7 @@ Napi::Value XmlNode::Namespace_Method(const Napi::CallbackInfo& info) {
       argv.push_back(info[1]);
     }
 
-    Napi::Object new_ns = XmlNamespace::constructor.New(argv);
+    Napi::Object new_ns = XmlNamespace::constructor(env).New(argv);
 
     // This addon is built with NAPI_DISABLE_CPP_EXCEPTIONS, so a throwing
     // constructor does not unwind — it returns with a JS exception pending.

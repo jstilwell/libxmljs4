@@ -13,7 +13,10 @@ namespace libxmljs {
 
 static bool sibling_will_merge(xmlNode *cur, xmlNode *elem, bool prev);
 
-Napi::FunctionReference XmlElement::constructor;
+// Per-env so each worker thread gets its own constructor reference.
+Napi::FunctionReference &XmlElement::constructor(Napi::Env env) {
+  return GetInstanceData(env)->element;
+}
 
 // doc, name, content
 XmlElement::XmlElement(const Napi::CallbackInfo& info)
@@ -33,7 +36,7 @@ XmlElement::XmlElement(const Napi::CallbackInfo& info)
   }
 
   XmlDocument *document =
-      info[0].As<Napi::Object>().InstanceOf(XmlDocument::constructor.Value())
+      info[0].As<Napi::Object>().InstanceOf(XmlDocument::constructor(env).Value())
           ? XmlDocument::Unwrap(info[0].As<Napi::Object>())
           : nullptr;
   if (!document) {
@@ -108,8 +111,7 @@ void XmlElement::Init(Napi::Env env, Napi::Object exports) {
     InstanceMethod("addNextSibling", &XmlElement::AddNextSibling),
     InstanceMethod("replace",      &XmlElement::Replace),
   });
-  constructor = Napi::Persistent(func);
-  constructor.SuppressDestruct();
+  constructor(env) = Napi::Persistent(func);
   exports.Set("Element", func);
 }
 
@@ -118,7 +120,7 @@ Napi::Object XmlElement::New(Napi::Env env, xmlNode *node) {
     return existing->Value_();
   }
 
-  Napi::Object obj = constructor.New({});
+  Napi::Object obj = constructor(env).New({});
   XmlElement *elem = Napi::ObjectWrap<XmlElement>::Unwrap(obj);
 
   // Initialize the XmlNode base.

@@ -14,7 +14,10 @@ namespace libxmljs {
     return env.Null();                                                         \
   }
 
-Napi::FunctionReference XmlTextWriter::constructor;
+// Per-env so each worker thread gets its own constructor reference.
+Napi::FunctionReference &XmlTextWriter::constructor(Napi::Env env) {
+  return GetInstanceData(env)->text_writer;
+}
 
 XmlTextWriter::XmlTextWriter(const Napi::CallbackInfo &info)
     : Napi::ObjectWrap<XmlTextWriter>(info),
@@ -296,8 +299,7 @@ void XmlTextWriter::Initialize(Napi::Env env, Napi::Object exports) {
     InstanceMethod("writeString",     &XmlTextWriter::WriteString),
   });
 
-  constructor = Napi::Persistent(func);
-  constructor.SuppressDestruct();
+  constructor(env) = Napi::Persistent(func);
 
   exports.Set("TextWriter", func);
 }

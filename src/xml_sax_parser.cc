@@ -368,7 +368,10 @@ void SaxParserBase::error(void *context, const char *msg, ...) {
 // XmlSaxParser (pull parser)
 // ---------------------------------------------------------------------------
 
-Napi::FunctionReference XmlSaxParser::constructor;
+// Per-env so each worker thread gets its own constructor reference.
+Napi::FunctionReference &XmlSaxParser::constructor(Napi::Env env) {
+  return GetInstanceData(env)->sax_parser;
+}
 
 XmlSaxParser::XmlSaxParser(const Napi::CallbackInfo &info)
     : Napi::ObjectWrap<XmlSaxParser>(info), SaxParserBase() {
@@ -406,8 +409,7 @@ void XmlSaxParser::Initialize(Napi::Env env, Napi::Object exports) {
     InstanceMethod("parseString", &XmlSaxParser::ParseString),
   });
 
-  constructor = Napi::Persistent(func);
-  constructor.SuppressDestruct();
+  constructor(env) = Napi::Persistent(func);
 
   exports.Set("SaxParser", func);
 }
@@ -416,7 +418,10 @@ void XmlSaxParser::Initialize(Napi::Env env, Napi::Object exports) {
 // XmlSaxPushParser (push parser)
 // ---------------------------------------------------------------------------
 
-Napi::FunctionReference XmlSaxPushParser::constructor;
+// Per-env so each worker thread gets its own constructor reference.
+Napi::FunctionReference &XmlSaxPushParser::constructor(Napi::Env env) {
+  return GetInstanceData(env)->sax_push_parser;
+}
 
 XmlSaxPushParser::XmlSaxPushParser(const Napi::CallbackInfo &info)
     : Napi::ObjectWrap<XmlSaxPushParser>(info), SaxParserBase() {
@@ -454,8 +459,7 @@ void XmlSaxPushParser::Initialize(Napi::Env env, Napi::Object exports) {
     InstanceMethod("push", &XmlSaxPushParser::Push),
   });
 
-  constructor = Napi::Persistent(func);
-  constructor.SuppressDestruct();
+  constructor(env) = Napi::Persistent(func);
 
   exports.Set("SaxPushParser", func);
 }

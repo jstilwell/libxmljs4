@@ -6,9 +6,14 @@
 #include "xml_element.h"
 #include "xml_namespace.h"
 
+#include "libxmljs.h"
+
 namespace libxmljs {
 
-Napi::FunctionReference XmlAttribute::constructor;
+// Per-env so each worker thread gets its own constructor reference.
+Napi::FunctionReference &XmlAttribute::constructor(Napi::Env env) {
+  return GetInstanceData(env)->attribute;
+}
 
 XmlAttribute::XmlAttribute(const Napi::CallbackInfo& info)
     : Napi::ObjectWrap<XmlAttribute>(info), XmlNode(nullptr) {
@@ -33,7 +38,7 @@ Napi::Value XmlAttribute::New(Napi::Env env, xmlAttr *attr) {
     return existing->Value_();
   }
 
-  Napi::Object obj = constructor.New({});
+  Napi::Object obj = constructor(env).New({});
   XmlAttribute *wrapper = Napi::ObjectWrap<XmlAttribute>::Unwrap(obj);
   wrapper->xml_obj = reinterpret_cast<xmlNode *>(attr);
   attr->_private = static_cast<XmlNode *>(wrapper);
@@ -166,8 +171,7 @@ void XmlAttribute::Init(Napi::Env env, Napi::Object exports) {
     InstanceMethod("node",  &XmlAttribute::Node),
   });
 
-  constructor = Napi::Persistent(func);
-  constructor.SuppressDestruct();
+  constructor(env) = Napi::Persistent(func);
   exports.Set("Attribute", func);
 }
 
