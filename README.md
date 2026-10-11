@@ -32,7 +32,11 @@ libxmljs4 starts at version `1.0.0` (forked from libxmljs2 `0.37.0`). The major 
 
 ### Changes from libxmljs2
 
-- **Security: CVE-2024-34393 and CVE-2024-34394 fixed** — The type confusion vulnerabilities in `attrs()` and `namespaces()` (which could lead to denial of service, data leakage, or remote code execution) have been eliminated. The entire C++ binding layer was rewritten from NAN to node-addon-api with type-safe wrapping, removing the class of unsafe pointer casts that caused these vulnerabilities.
+- **Security: CVE-2024-34393 and CVE-2024-34394 fixed** — In libxmljs2, calling `attrs()` or `namespaces(true)` on a DTD, entity, or declaration node (reachable through `childNodes()` of an entity reference) read the wrong C struct, which could crash the process or worse. These nodes are still returned, and `type()`, `name()`, `text()`, and `toString()` work on them, but `attrs()` and `namespaces(true)` return `[]`, `attr()` and `namespace()` return `null`, and methods that would modify them (`attr(name, value)`, `addChild()`, `remove()`, `text(value)`, and so on) throw. `test/security.test.js` covers both CVEs.
+- **Patched libxml2**: The bundled libxml2 is 2.9.14 with Debian's and Ubuntu's security backports applied (see `vendor/libxml/PATCHES.md`), and `libxml_version` reports `2.9.14`. libxmljs2 shipped an unpatched mid-2021 snapshot that reported itself as 2.9.9. Two backported fixes reject inputs libxmljs2 accepted: entity expansion beyond 10 MB that is also more than 10 times the input size fails with "Maximum entity amplification factor exceeded" (also with `huge`), and without `huge`, CDATA sections over 10,000,000 bytes and quoted literals or NMTOKENs over 50,000 characters are rejected. HTML parsing output is unchanged.
+- **XPath namespace and document nodes**: `find('//namespace::*')` returns `Namespace` objects, and an XPath that selects the document node (for example `find('..')` from the root) returns the `Document`. In libxmljs2 both crashed the process.
+- **Invalid arguments throw**: Passing the wrong kind of value, such as `parseXml(null)`, `addChild(null)`, or a non-node to `addNextSibling()`, throws a `TypeError` instead of crashing. String arguments are still converted with `String(value)` as in libxmljs2, so `attr('count', 5)` sets `count="5"`.
+- **SAX re-entrancy**: Calling `parseString()` or `push()` from inside one of the same parser's event handlers throws an `Error`. Parsing an empty string emits an `error` event.
 - **Node-API (N-API)**: Native addon now uses ABI-stable Node-API instead of NAN. Prebuilt binaries work across Node.js versions without recompilation.
 - **TypeScript source**: The JS wrapper layer is now written in TypeScript with generated type definitions.
 - **ESM support**: Both `require()` and `import` work via the `exports` field in package.json.
@@ -101,7 +105,7 @@ When parsing untrusted input:
 - **The default options do not resolve external entities.** With no options set, `parseXml` neither loads an external DTD nor substitutes external entities. Neither do `SaxParser` and `SaxPushParser`.
 - **Do not enable `noent`, `dtdload`, `dtdattr`, `dtdvalid`, or `xinclude`.** Each one makes the parser read local files that the document names, which is how XML external entity (XXE) attacks work. `noent` substitutes external entities into the document, `dtdload`, `dtdattr`, and `dtdvalid` load the external DTD, and `xinclude` inlines `xi:include` targets.
 - **Network access is compiled out.** This build has no HTTP or FTP support (`libxmljs.features.HTTP` and `libxmljs.features.FTP` are `false`), so the parser never fetches remote URLs, with or without `nonet`. It can still read local files.
-- **Do not enable `huge`.** It removes libxml2's limits on entity expansion, text node size, and nesting depth. Those limits are what reject "billion laughs" documents.
+- **Do not enable `huge`.** It removes libxml2's limits on text node size, name and literal length, and nesting depth. Entity expansion is still capped by an amplification limit, but the other limits exist to bound memory use on hostile input.
 - **Only use trusted schemas.** XSD, RelaxNG, and Schematron documents passed to `validate()`, `rngValidate()`, and `schematronValidate()` can include or import other files, which libxml2 loads.
 
 ### XPath Queries
@@ -201,6 +205,10 @@ libxmljs.libxml_version; // Underlying libxml2 version
 libxmljs.memoryUsage(); // Bytes allocated by libxml2
 libxmljs.nodeCount(); // Number of live XML nodes
 ```
+
+### Worker threads
+
+The addon can be loaded in worker threads, and the main thread keeps working after a worker exits. The bundled libxml2 is built without thread support, so its error handling is process-wide: do not parse, validate, or run XPath on more than one thread at the same time.
 
 ## Support
 
