@@ -1,5 +1,6 @@
 // Copyright 2009, Squish Tech, LLC.
 
+#include <cmath>
 #include <cstring>
 
 #include "xml_syntax_error.h"
@@ -45,8 +46,35 @@ Napi::Value XmlSyntaxError::BuildSyntaxError(Napi::Env env, xmlError *error) {
   return err;
 }
 
+bool GetMaxErrors(Napi::Env env, Napi::Value options, uint32_t &out) {
+  out = kDefaultMaxErrors;
+  if (!options.IsObject()) {
+    return true;
+  }
+  Napi::Value value = options.As<Napi::Object>().Get("maxErrors");
+  if (env.IsExceptionPending()) {
+    return false;
+  }
+  if (value.IsUndefined()) {
+    return true;
+  }
+  double number = value.IsNumber() ? value.As<Napi::Number>().DoubleValue()
+                                   : std::nan("");
+  if (std::isnan(number) || (number < 0)) {
+    Napi::TypeError::New(env, "maxErrors must be a non-negative number")
+        .ThrowAsJavaScriptException();
+    return false;
+  }
+  out = (number >= 4294967295.0) ? UINT32_MAX : static_cast<uint32_t>(number);
+  return true;
+}
+
 void XmlSyntaxError::PushToArray(void *context, xmlError *error) {
   XmlSyntaxErrorContext *ctx = reinterpret_cast<XmlSyntaxErrorContext *>(context);
+  if (ctx->count >= ctx->max_errors) {
+    return;
+  }
+  ctx->count++;
   Napi::Env env = ctx->env;
   Napi::Array errors = *(ctx->errors);
 

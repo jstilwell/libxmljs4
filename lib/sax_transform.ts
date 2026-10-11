@@ -75,10 +75,13 @@ export class SaxTransform extends Transform {
     try {
       // Push any bytes the decoder still holds. They can only be an
       // incomplete sequence at end of input, which end() returns as U+FFFD.
+      // Parse errors arrive as 'saxError' events, so anything thrown here
+      // comes from a listener (e.g. one handling endDocument) and fails the
+      // stream, the same as during _transform.
       this._parser.push(this.#decoder.end(), true);
-    } catch {
-      // Ignore errors from signaling end-of-document — the document
-      // may already be complete from a prior chunk.
+    } catch (err) {
+      callback(err instanceof Error ? err : new Error(String(err)));
+      return;
     }
     callback();
   }

@@ -387,6 +387,8 @@ xmlParserOption getParserOptions(Napi::Object props) {
   ret |= getParserOption(
       props, "old10",
       XML_PARSE_OLD10); // 131072: parse using XML-1.0 before update 5
+  ret |= getParserOption(props, "old",
+                         XML_PARSE_OLD10); // documented alias of old10
 
   ret |= getParserOption(
       props, "nobasefix",
@@ -446,8 +448,13 @@ Napi::Value XmlDocument::FromHtml(const Napi::CallbackInfo& info) {
     encoding = encodingStr.c_str();
   }
 
+  uint32_t max_errors;
+  if (!GetMaxErrors(env, options, max_errors)) {
+    return env.Null();
+  }
+
   Napi::Array errors = Napi::Array::New(env);
-  XmlSyntaxErrorContext errCtx = { env, &errors };
+  XmlSyntaxErrorContext errCtx = { env, &errors, max_errors, 0 };
 
   xmlResetLastError();
   xmlSetStructuredErrorFunc(reinterpret_cast<void *>(&errCtx),
@@ -501,16 +508,21 @@ Napi::Value XmlDocument::FromXml(const Napi::CallbackInfo& info) {
     return env.Null();
   }
 
+  // Non-object options (including primitives) have always been ignored.
+  Napi::Object options = info[1].IsObject() ? info[1].As<Napi::Object>()
+                                            : Napi::Object::New(env);
+  uint32_t max_errors;
+  if (!GetMaxErrors(env, options, max_errors)) {
+    return env.Null();
+  }
+
   Napi::Array errors = Napi::Array::New(env);
-  XmlSyntaxErrorContext errCtx = { env, &errors };
+  XmlSyntaxErrorContext errCtx = { env, &errors, max_errors, 0 };
 
   xmlResetLastError();
   xmlSetStructuredErrorFunc(reinterpret_cast<void *>(&errCtx),
                             XmlSyntaxError::PushToArray);
 
-  // Non-object options (including primitives) have always been ignored.
-  Napi::Object options = info[1].IsObject() ? info[1].As<Napi::Object>()
-                                            : Napi::Object::New(env);
   Napi::Value baseUrlOpt = options.Get("baseUrl");
   Napi::Value encodingOpt = options.Get("encoding");
 
@@ -603,8 +615,13 @@ Napi::Value XmlDocument::Validate(const Napi::CallbackInfo& info) {
     return env.Null();
   }
 
+  uint32_t max_errors;
+  if (!GetMaxErrors(env, info[1], max_errors)) {
+    return env.Null();
+  }
+
   Napi::Array errors = Napi::Array::New(env);
-  XmlSyntaxErrorContext errCtx = { env, &errors };
+  XmlSyntaxErrorContext errCtx = { env, &errors, max_errors, 0 };
 
   xmlResetLastError();
   xmlSetStructuredErrorFunc(reinterpret_cast<void *>(&errCtx),
@@ -660,8 +677,13 @@ Napi::Value XmlDocument::RngValidate(const Napi::CallbackInfo& info) {
     return env.Null();
   }
 
+  uint32_t max_errors;
+  if (!GetMaxErrors(env, info[1], max_errors)) {
+    return env.Null();
+  }
+
   Napi::Array errors = Napi::Array::New(env);
-  XmlSyntaxErrorContext errCtx = { env, &errors };
+  XmlSyntaxErrorContext errCtx = { env, &errors, max_errors, 0 };
 
   xmlResetLastError();
   xmlSetStructuredErrorFunc(reinterpret_cast<void *>(&errCtx),
@@ -717,8 +739,13 @@ Napi::Value XmlDocument::SchematronValidate(const Napi::CallbackInfo& info) {
     return env.Null();
   }
 
+  uint32_t max_errors;
+  if (!GetMaxErrors(env, info[1], max_errors)) {
+    return env.Null();
+  }
+
   Napi::Array errors = Napi::Array::New(env);
-  XmlSyntaxErrorContext errCtx = { env, &errors };
+  XmlSyntaxErrorContext errCtx = { env, &errors, max_errors, 0 };
 
   XmlDocument *documentSchema =
       Napi::ObjectWrap<XmlDocument>::Unwrap(info[0].As<Napi::Object>());
