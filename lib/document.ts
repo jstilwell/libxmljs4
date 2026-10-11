@@ -81,31 +81,45 @@ Document.prototype.namespaces = function namespaces(this: any) {
 
 export default Document;
 
+// Validate the HTML parsers' options argument. `null` is treated like an
+// omitted argument; passed through, it would reach the native layer, which
+// cannot read properties from it and aborts the process.
+function htmlOptions(fn: string, opts: ParserOptions): ParserOptions {
+  if (opts === undefined || opts === null) {
+    return {};
+  }
+  if (typeof opts !== 'object') {
+    throw new Error(`${fn} options must be an object`);
+  }
+  return opts;
+}
+
 export function fromHtml(
   string: string,
   opts: ParserOptions = {}
 ): typeof Document {
-  if (typeof opts !== 'object') {
-    throw new Error('fromHtml options must be an object');
-  }
-  return bindings.fromHtml(string, opts);
+  return bindings.fromHtml(string, htmlOptions('fromHtml', opts));
 }
 
 export function fromHtmlFragment(
   string: string,
   opts: ParserOptions = {}
 ): typeof Document {
-  if (typeof opts !== 'object') {
-    throw new Error('fromHtmlFragment options must be an object');
-  }
-  (opts as any).doctype = false;
-  (opts as any).implied = false;
-  return bindings.fromHtml(string, opts);
+  // Override doctype/implied without mutating the caller's object. The
+  // native layer reads options with an ordinary property lookup, so an
+  // object inheriting from the caller's sees every option they set,
+  // including inherited and non-enumerable ones a spread copy would drop.
+  const fragmentOpts = Object.create(htmlOptions('fromHtmlFragment', opts));
+  fragmentOpts.doctype = false;
+  fragmentOpts.implied = false;
+  return bindings.fromHtml(string, fragmentOpts);
 }
 
 export function fromXml(
   string: string,
   options: ParserOptions = {}
 ): typeof Document {
-  return bindings.fromXml(string, options);
+  // `null` would abort the process in the native layer; treat it like an
+  // omitted argument. Other values are passed through unchanged, as before.
+  return bindings.fromXml(string, options ?? {});
 }

@@ -438,6 +438,51 @@ describe('document', () => {
     expect(`${html}\n`).toBe(parsedHtml.toString());
   });
 
+  it('fromHtmlFragment does not mutate the options object', () => {
+    const html = Buffer.from('<p>caf\xe9</p>', 'latin1');
+    const opts = { encoding: 'ISO-8859-1' };
+    const parsedHtml = libxml.Document.fromHtmlFragment(html, opts);
+
+    expect(opts).toEqual({ encoding: 'ISO-8859-1' });
+    // The caller's option is still honored: no encoding errors.
+    expect(parsedHtml.errors).toHaveLength(0);
+    expect(parsedHtml.root().text()).toBe('café');
+    expect(parsedHtml.toString()).toBe('<p>café</p>\n');
+  });
+
+  it('fromHtmlFragment honors inherited options', () => {
+    const html = Buffer.from('<p>caf\xe9</p>', 'latin1');
+    const opts = Object.create({ encoding: 'ISO-8859-1' });
+    const parsedHtml = libxml.Document.fromHtmlFragment(html, opts);
+
+    expect(parsedHtml.errors).toHaveLength(0);
+    expect(parsedHtml.root().text()).toBe('café');
+  });
+
+  it('parse functions treat null options like omitted options', () => {
+    const xml = '<root><child/></root>';
+    const html = '<p>A paragraph</p>';
+
+    expect(libxml.parseXml(xml, null).toString()).toBe(
+      libxml.parseXml(xml).toString()
+    );
+    expect(libxml.parseHtml(html, null).toString()).toBe(
+      libxml.parseHtml(html).toString()
+    );
+    expect(libxml.parseHtmlFragment(html, null).toString()).toBe(
+      libxml.parseHtmlFragment(html).toString()
+    );
+  });
+
+  it('HTML parse functions reject non-object options', () => {
+    expect(() => libxml.parseHtml('<p/>', 'recover')).toThrow(
+      'fromHtml options must be an object'
+    );
+    expect(() => libxml.parseHtmlFragment('<p/>', true)).toThrow(
+      'fromHtmlFragment options must be an object'
+    );
+  });
+
   it('validate rng memory usage', () => {
     const rng =
       '<element name="addressBook" xmlns="http://relaxng.org/ns/structure/1.0">' +
