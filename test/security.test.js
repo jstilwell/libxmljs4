@@ -258,6 +258,38 @@ describe('security regressions', () => {
     expect(res.values).toEqual(['a', 'x', 'c', 'x', 'c', 'x', 'c']);
   });
 
+  it('typed arrays and DataViews are read as bytes', () => {
+    const res = run(`
+      const b = Buffer.from('<r><c/></r>');
+      out(libxml.parseXml(new DataView(b.buffer, b.byteOffset, b.length)).root().name());
+      out(libxml.parseHtml(new DataView(b.buffer, b.byteOffset, b.length)).get('//c').name());
+      out(libxml.parseXml(new Uint8Array(b)).root().name());
+      out(throws(() => libxml.parseXml({})));
+    `);
+    expectClean(res);
+    expect(res.values).toEqual(['r', 'c', 'r', 'TypeError']);
+  });
+
+  it('HTML-only options do not load an external DTD in parseXml', () => {
+    const res = run(`
+      const fs = require('node:fs');
+      const os = require('node:os');
+      const path = require('node:path');
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'libxmljs4-dtd-'));
+      fs.writeFileSync(path.join(dir, 'ext.dtd'), '<!ENTITY e "from-ext">');
+      const xml = '<!DOCTYPE r SYSTEM "ext.dtd"><r>&e;</r>';
+      // The external DTD declares the entity, so it resolves only if loaded.
+      const loaded = (opts) => !libxml
+        .parseXml(xml, { baseUrl: path.join(dir, 'x.xml'), recover: true, ...opts })
+        .errors.some((e) => /Entity 'e' not defined/.test(e.message));
+      out([loaded({}), loaded({ doctype: false }), loaded({ implied: false })]);
+      out(loaded({ dtdload: true }));
+      fs.rmSync(dir, { recursive: true });
+    `);
+    expectClean(res);
+    expect(res.values).toEqual([[false, false, false], true]);
+  });
+
   it('SAX parsers reject re-entrant calls and handle empty input', () => {
     const res = run(`
       const p = new libxml.SaxParser();

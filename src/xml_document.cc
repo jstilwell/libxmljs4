@@ -297,7 +297,30 @@ int getParserOption(Napi::Object props, const char *key, int value,
              : 0;
 }
 
-xmlParserOption getParserOptions(Napi::Object props) {
+// Raw bytes of a Buffer, other typed array, or DataView. Returns false for
+// any other value. (napi_is_buffer also accepts DataViews, which cannot be
+// read as a Buffer, so this checks the concrete view type instead.)
+static bool GetSourceBytes(Napi::Value value, const char *&data,
+                           size_t &length) {
+  if (value.IsTypedArray()) {
+    Napi::TypedArray view = value.As<Napi::TypedArray>();
+    data = static_cast<const char *>(view.ArrayBuffer().Data()) +
+           view.ByteOffset();
+    length = view.ByteLength();
+    return true;
+  }
+  if (value.IsDataView()) {
+    Napi::DataView view = value.As<Napi::DataView>();
+    data = static_cast<const char *>(view.Data());
+    length = view.ByteLength();
+    return true;
+  }
+  return false;
+}
+
+// `html` selects which meaning to give the options whose libxml2 flag bits
+// are shared between the XML and HTML parsers.
+xmlParserOption getParserOptions(Napi::Object props, bool html) {
   int ret = 0;
 
   // http://xmlsoft.org/html/libxml-parser.html#xmlParserOption
@@ -313,8 +336,12 @@ xmlParserOption getParserOptions(Napi::Object props) {
 
   ret |= getParserOption(props, "dtdload",
                          XML_PARSE_DTDLOAD); // 4: load the external subset
-  ret |= getParserOption(props, "doctype", HTML_PARSE_NODEFDTD,
-                         false); // 4: do not default a doctype if not found
+  // HTML only: in the XML parser this bit means XML_PARSE_DTDLOAD, so
+  // `doctype: false` would silently load the external DTD.
+  if (html) {
+    ret |= getParserOption(props, "doctype", HTML_PARSE_NODEFDTD,
+                           false); // 4: do not default a doctype if not found
+  }
 
   ret |= getParserOption(props, "dtdattr",
                          XML_PARSE_DTDATTR); // 8: default DTD attributes
@@ -361,8 +388,11 @@ xmlParserOption getParserOptions(Napi::Object props) {
   ret |= getParserOption(
       props, "nsclean",
       XML_PARSE_NSCLEAN); // 8192: remove redundant namespaces declarations
-  ret |= getParserOption(props, "implied", HTML_PARSE_NOIMPLIED,
-                         false); // 8192: Do not add implied html/body elements
+  // HTML only: in the XML parser this bit means XML_PARSE_NSCLEAN.
+  if (html) {
+    ret |= getParserOption(props, "implied", HTML_PARSE_NOIMPLIED,
+                           false); // 8192: Do not add implied html/body elements
+  }
 
   ret |= getParserOption(props, "nocdata",
                          XML_PARSE_NOCDATA); // 16384: merge CDATA as text nodes
@@ -419,7 +449,8 @@ xmlParserOption getParserOptions(Napi::Object props) {
 Napi::Value XmlDocument::FromHtml(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
 
-  if (!info[0].IsString() && !info[0].IsBuffer()) {
+  if (!info[0].IsString() && !info[0].IsTypedArray() &&
+      !info[0].IsDataView()) {
     Napi::TypeError::New(env, "source must be a string or Buffer")
         .ThrowAsJavaScriptException();
     return env.Null();
@@ -460,20 +491,21 @@ Napi::Value XmlDocument::FromHtml(const Napi::CallbackInfo& info) {
   xmlSetStructuredErrorFunc(reinterpret_cast<void *>(&errCtx),
                             XmlSyntaxError::PushToArray);
 
-  int opts = (int)getParserOptions(options);
+  int opts = (int)getParserOptions(options, true);
   if (!excludeImpliedElementsOpt.IsUndefined() &&
       excludeImpliedElementsOpt.ToBoolean().Value())
     opts |= HTML_PARSE_NOIMPLIED | HTML_PARSE_NODEFDTD;
 
   htmlDocPtr doc;
-  if (!info[0].IsBuffer()) {
-    // Parse a string
+  if (info[0].IsString()) {
     std::string str = info[0].As<Napi::String>().Utf8Value();
     doc = htmlReadMemory(str.c_str(), str.length(), baseUrl, encoding, opts);
   } else {
-    // Parse a buffer
-    Napi::Buffer<char> buf = info[0].As<Napi::Buffer<char>>();
-    doc = htmlReadMemory(buf.Data(), buf.Length(), baseUrl, encoding, opts);
+    const char *data = nullptr;
+    size_t length = 0;
+    GetSourceBytes(info[0], data, length);
+    doc = htmlReadMemory(data, static_cast<int>(length), baseUrl, encoding,
+                         opts);
   }
 
   xmlSetStructuredErrorFunc(NULL, NULL);
@@ -502,7 +534,8 @@ Napi::Value XmlDocument::FromHtml(const Napi::CallbackInfo& info) {
 Napi::Value XmlDocument::FromXml(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
 
-  if (!info[0].IsString() && !info[0].IsBuffer()) {
+  if (!info[0].IsString() && !info[0].IsTypedArray() &&
+      !info[0].IsDataView()) {
     Napi::TypeError::New(env, "source must be a string or Buffer")
         .ThrowAsJavaScriptException();
     return env.Null();
@@ -543,16 +576,17 @@ Napi::Value XmlDocument::FromXml(const Napi::CallbackInfo& info) {
     encoding = encodingStr.c_str();
   }
 
-  int opts = (int)getParserOptions(options);
+  int opts = (int)getParserOptions(options, false);
   xmlDocPtr doc;
-  if (!info[0].IsBuffer()) {
-    // Parse a string
+  if (info[0].IsString()) {
     std::string str = info[0].As<Napi::String>().Utf8Value();
     doc = xmlReadMemory(str.c_str(), str.length(), baseUrl, "UTF-8", opts);
   } else {
-    // Parse a buffer
-    Napi::Buffer<char> buf = info[0].As<Napi::Buffer<char>>();
-    doc = xmlReadMemory(buf.Data(), buf.Length(), baseUrl, encoding, opts);
+    const char *data = nullptr;
+    size_t length = 0;
+    GetSourceBytes(info[0], data, length);
+    doc = xmlReadMemory(data, static_cast<int>(length), baseUrl, encoding,
+                        opts);
   }
 
   xmlSetStructuredErrorFunc(NULL, NULL);
