@@ -10,12 +10,21 @@ namespace libxmljs {
 
 XmlXpathContext::XmlXpathContext(xmlNode *node) {
   ctxt = xmlXPathNewContext(node->doc);
-  ctxt->node = node;
+  if (ctxt != nullptr) {
+    ctxt->node = node;
+  }
 }
 
-XmlXpathContext::~XmlXpathContext() { xmlXPathFreeContext(ctxt); }
+XmlXpathContext::~XmlXpathContext() {
+  if (ctxt != nullptr) {
+    xmlXPathFreeContext(ctxt);
+  }
+}
 
 void XmlXpathContext::register_ns(const xmlChar *prefix, const xmlChar *uri) {
+  if (ctxt == nullptr) {
+    return;
+  }
   xmlXPathRegisterNs(ctxt, prefix, uri);
 }
 

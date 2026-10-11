@@ -2,10 +2,63 @@
 #ifndef SRC_XML_NODE_H_
 #define SRC_XML_NODE_H_
 
+#include <string>
+
 #include <napi.h>
 #include <libxml/tree.h>
 
 namespace libxmljs {
+
+// True for node types whose C struct is a full xmlNode, so the
+// element-specific fields (ns, content, properties, nsDef) exist and may be
+// read. DTDs, declarations, attributes, namespaces and documents use
+// different structs and must never be treated as elements.
+inline bool has_element_fields(const xmlNode *node) {
+  return (node != nullptr) &&
+         ((node->type == XML_ELEMENT_NODE) ||
+          (node->type == XML_XINCLUDE_START) ||
+          (node->type == XML_XINCLUDE_END));
+}
+
+// True for node types that are plain tree nodes (xmlNode struct) and can
+// safely be linked, unlinked, or have children added via the tree API.
+inline bool is_tree_node(const xmlNode *node) {
+  if (node == nullptr) {
+    return false;
+  }
+  switch (node->type) {
+  case XML_ELEMENT_NODE:
+  case XML_TEXT_NODE:
+  case XML_CDATA_SECTION_NODE:
+  case XML_ENTITY_REF_NODE:
+  case XML_PI_NODE:
+  case XML_COMMENT_NODE:
+  case XML_DOCUMENT_FRAG_NODE:
+  case XML_XINCLUDE_START:
+  case XML_XINCLUDE_END:
+    return true;
+  default:
+    return false;
+  }
+}
+
+// Convert a JS value to a UTF-8 string the way libxmljs2's Nan::Utf8String
+// did (String(value)), so numbers and booleans keep working. Returns false
+// with a JS exception pending if the conversion throws (e.g. a Symbol).
+inline bool ToUtf8(Napi::Env env, Napi::Value value, std::string &out) {
+  Napi::String str = value.ToString();
+  if (env.IsExceptionPending()) {
+    return false;
+  }
+  out = str.Utf8Value();
+  return true;
+}
+
+// Throw a TypeError and return undefined-equivalent for the caller.
+inline Napi::Value ThrowTypeError(Napi::Env env, const char *message) {
+  Napi::TypeError::New(env, message).ThrowAsJavaScriptException();
+  return env.Undefined();
+}
 
 // XmlNode is a plain C++ base class (NOT an ObjectWrap itself).
 // Each concrete subclass (XmlElement, XmlText, XmlComment, etc.) inherits
@@ -55,6 +108,11 @@ public:
   // for the given libxml node.
   static Napi::Value New(Napi::Env env, xmlNode *node);
 
+  // Return the node's existing wrapper if its JS object is still alive.
+  // A wrapper whose JS object was collected but not yet finalized is
+  // detached and nullptr is returned, so callers create a fresh one.
+  static XmlNode *live_wrapper(xmlNode *node);
+
   // Cross-subclass unwrap helper.  Given a JS object that wraps any concrete
   // XmlNode subclass, return the XmlNode* by reading xml_obj->_private.
   // Returns nullptr if the object is not a valid node wrapper.
@@ -66,7 +124,8 @@ public:
   Napi::Value get_doc(Napi::Env env);
   Napi::Value remove_namespace(Napi::Env env);
   Napi::Value get_namespace(Napi::Env env);
-  void set_namespace(xmlNs *ns);
+  // Returns false if this node type cannot carry a namespace.
+  bool set_namespace(xmlNs *ns);
   xmlNs *find_namespace(const char *search_str);
   Napi::Value get_all_namespaces(Napi::Env env);
   Napi::Value get_local_namespaces(Napi::Env env);
@@ -77,7 +136,8 @@ public:
   Napi::Value clone(Napi::Env env, bool recurse);
   Napi::Value get_type(Napi::Env env);
   Napi::Value to_string(Napi::Env env, int options = 0);
-  void remove();
+  // Returns false if this node type cannot be unlinked from its parent.
+  bool remove();
   void add_child(xmlNode *child);
   void add_prev_sibling(xmlNode *node);
   void add_next_sibling(xmlNode *node);
