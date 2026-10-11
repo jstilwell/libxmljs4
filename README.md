@@ -41,7 +41,7 @@ libxmljs4 starts at version `1.0.0` (forked from libxmljs2 `0.37.0`). The major 
 - **`SaxTransform` reports listener errors at end of input**: An exception thrown by a listener during the final push (for example in an `endDocument` handler) fails the stream, as it already did for earlier chunks. libxmljs2 swallowed it.
 - **SAX re-entrancy**: Calling `parseString()` or `push()` from inside one of the same parser's event handlers throws an `Error`. Parsing an empty string emits an `error` event.
 - **Node-API (N-API)**: Native addon now uses ABI-stable Node-API instead of NAN. Prebuilt binaries work across Node.js versions without recompilation.
-- **TypeScript source**: The JS wrapper layer is now written in TypeScript with generated type definitions.
+- **TypeScript source**: The JS wrapper layer is now written in TypeScript with generated type definitions. They follow what the runtime returns, so some differ from libxmljs2's hand-written ones: `find()` and `get()` default to `Element` and take a type argument for other results, `get()` returns `undefined` when nothing matches, both return `null` for an invalid expression, the parse functions return `ParsedDocument`, `childNodes()` returns a `ChildNode` union, the `str1`–`str3` fields of errors are strings, and `Node`, `Attribute`, and `Namespace` are types only. See [TypeScript](#typescript).
 - **ESM support**: Both `require()` and `import` work via the `exports` field in package.json.
 - **Removed compatibility synonyms**: `parseXmlString` (use `parseXml`), `parseHtmlString` (use `parseHtml`), `Document.fromXmlString` (use `Document.fromXml`), `Document.fromHtmlString` (use `Document.fromHtml`).
 - **Replaced `bindings` package**: Native addon loading no longer depends on the `bindings` npm package.
@@ -74,7 +74,7 @@ const xmlDoc = libxmljs.parseXml(
 );
 
 console.log(xmlDoc.get('//grandchild').text()); // "grandchild content"
-console.log(xmlDoc.root().childNodes()[0].attr('foo').value()); // "bar"
+console.log(xmlDoc.get('//child').attr('foo').value()); // "bar"
 ```
 
 ### Parsing HTML
@@ -210,6 +210,34 @@ libxmljs.libxml_version; // Underlying libxml2 version
 libxmljs.memoryUsage(); // Bytes allocated by libxml2
 libxmljs.nodeCount(); // Number of live XML nodes
 ```
+
+### TypeScript
+
+Type definitions are included for both `require` and `import`. Each class is both a value and a type, and the parse functions return a `ParsedDocument`, a `Document` whose `errors` are always set. `Node`, `Attribute`, and `Namespace` are exported as types only.
+
+`find()` and `get()` assume the expression selects elements, like the DOM's `querySelector()`. Pass a type argument for other nodes, or for an expression that computes a value.
+
+```typescript
+import { parseXml, Element, type Document, type Text } from 'libxmljs4';
+
+const doc: Document = parseXml('<list><item id="a">one</item><!--x--></list>');
+
+for (const item of doc.find('//item') ?? []) {
+  console.log(item.attr('id')?.value()); // "a"
+}
+console.log(doc.get<Text>('//item/text()')?.text()); // "one"
+console.log(doc.get<number>('count(//item)')); // 1
+
+// childNodes() returns elements, text, comments, and processing
+// instructions; narrow with instanceof.
+for (const node of doc.root()?.childNodes() ?? []) {
+  if (node instanceof Element) {
+    console.log(node.name()); // "item"
+  }
+}
+```
+
+SAX listeners are typed by event name, both on `SaxParser`/`SaxPushParser` and on `SaxTransform`.
 
 ### Worker threads
 
