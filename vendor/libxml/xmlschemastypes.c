@@ -2867,7 +2867,7 @@ xmlSchemaValAtomicType(xmlSchemaTypePtr type, const xmlChar * value,
                 /*
                  * NOTE: the IDness might have already be declared in the DTD
                  */
-                if (attr->atype != XML_ATTRIBUTE_ID) {
+                if (XML_ATTR_GET_ATYPE(attr) != XML_ATTRIBUTE_ID) {
                     xmlIDPtr res;
                     xmlChar *strip;
 
@@ -2880,7 +2880,7 @@ xmlSchemaValAtomicType(xmlSchemaTypePtr type, const xmlChar * value,
                     if (res == NULL) {
                         ret = 2;
                     } else {
-                        attr->atype = XML_ATTRIBUTE_ID;
+                        XML_ATTR_SET_ATYPE(attr, XML_ATTRIBUTE_ID);
                     }
                 }
             }
@@ -2905,7 +2905,7 @@ xmlSchemaValAtomicType(xmlSchemaTypePtr type, const xmlChar * value,
                     xmlFree(strip);
                 } else
                     xmlAddRef(NULL, node->doc, value, attr);
-                attr->atype = XML_ATTRIBUTE_IDREF;
+                XML_ATTR_SET_ATYPE(attr, XML_ATTRIBUTE_IDREF);
             }
             goto done;
         case XML_SCHEMAS_IDREFS:
@@ -2919,7 +2919,7 @@ xmlSchemaValAtomicType(xmlSchemaTypePtr type, const xmlChar * value,
                 (node->type == XML_ATTRIBUTE_NODE)) {
                 xmlAttrPtr attr = (xmlAttrPtr) node;
 
-                attr->atype = XML_ATTRIBUTE_IDREFS;
+                XML_ATTR_SET_ATYPE(attr, XML_ATTRIBUTE_IDREFS);
             }
             goto done;
         case XML_SCHEMAS_ENTITY:{
@@ -2950,7 +2950,7 @@ xmlSchemaValAtomicType(xmlSchemaTypePtr type, const xmlChar * value,
                     (node->type == XML_ATTRIBUTE_NODE)) {
                     xmlAttrPtr attr = (xmlAttrPtr) node;
 
-                    attr->atype = XML_ATTRIBUTE_ENTITY;
+                    XML_ATTR_SET_ATYPE(attr, XML_ATTRIBUTE_ENTITY);
                 }
                 goto done;
             }
@@ -2967,7 +2967,7 @@ xmlSchemaValAtomicType(xmlSchemaTypePtr type, const xmlChar * value,
                 (node->type == XML_ATTRIBUTE_NODE)) {
                 xmlAttrPtr attr = (xmlAttrPtr) node;
 
-                attr->atype = XML_ATTRIBUTE_ENTITIES;
+                XML_ATTR_SET_ATYPE(attr, XML_ATTRIBUTE_ENTITIES);
             }
             goto done;
         case XML_SCHEMAS_NOTATION:{

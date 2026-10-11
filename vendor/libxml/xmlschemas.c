@@ -6024,7 +6024,7 @@ xmlSchemaPValAttrNodeID(xmlSchemaParserCtxtPtr ctxt, xmlAttrPtr attr)
 	/*
 	* NOTE: the IDness might have already be declared in the DTD
 	*/
-	if (attr->atype != XML_ATTRIBUTE_ID) {
+	if (XML_ATTR_GET_ATYPE(attr) != XML_ATTRIBUTE_ID) {
 	    xmlIDPtr res;
 	    xmlChar *strip;
 
@@ -6047,7 +6047,7 @@ xmlSchemaPValAttrNodeID(xmlSchemaParserCtxtPtr ctxt, xmlAttrPtr attr)
 		    NULL, NULL, "Duplicate value '%s' of simple "
 		    "type 'xs:ID'", value, NULL);
 	    } else
-		attr->atype = XML_ATTRIBUTE_ID;
+		XML_ATTR_SET_ATYPE(attr, XML_ATTRIBUTE_ID);
 	}
     } else if (ret > 0) {
 	ret = XML_SCHEMAP_S4S_ATTR_INVALID_VALUE;
@@ -13345,8 +13345,19 @@ xmlSchemaResolveElementReferences(xmlSchemaElementPtr elemDecl,
 	    * declaration `resolved` to by the `actual value`
 	    * of the substitutionGroup [attribute], if present"
 	    */
-	    if (elemDecl->subtypes == NULL)
-		elemDecl->subtypes = substHead->subtypes;
+	    if (elemDecl->subtypes == NULL) {
+                if (substHead->subtypes == NULL) {
+                    /*
+                     * This can happen with self-referencing substitution
+                     * groups. The cycle will be detected later, but we have
+                     * to set subtypes to avoid null-pointer dereferences.
+                     */
+	            elemDecl->subtypes = xmlSchemaGetBuiltInType(
+                            XML_SCHEMAS_ANYTYPE);
+                } else {
+		    elemDecl->subtypes = substHead->subtypes;
+                }
+            }
 	}
     }
     /*
@@ -18608,7 +18619,7 @@ xmlSchemaFixupComplexType(xmlSchemaParserCtxtPtr pctxt,
 			"allowed to appear inside other model groups",
 			NULL, NULL);
 
-		} else if (! dummySequence) {
+		} else if ((!dummySequence) && (baseType->subtypes != NULL)) {
 		    xmlSchemaTreeItemPtr effectiveContent =
 			(xmlSchemaTreeItemPtr) type->subtypes;
 		    /*
@@ -23607,7 +23618,7 @@ xmlSchemaIDCFillNodeTables(xmlSchemaValidCtxtPtr vctxt,
 			j++;
 		    } while (j < nbDupls);
 		}
-		if (nbNodeTable) {
+		if (bind->nbNodes) {
 		    j = 0;
 		    do {
 			if (nbFields == 1) {
@@ -23647,6 +23658,7 @@ xmlSchemaIDCFillNodeTables(xmlSchemaValidCtxtPtr vctxt,
 			}
 			if (xmlSchemaItemListAdd(bind->dupls, bind->nodeTable[j]) == -1)
 			    goto internal_error;
+                        dupls = (xmlSchemaPSVIIDCNodePtr *) bind->dupls->items;
 			/*
 			* Remove the duplicate entry from the IDC node-table.
 			*/
@@ -23657,7 +23669,7 @@ xmlSchemaIDCFillNodeTables(xmlSchemaValidCtxtPtr vctxt,
 
 next_node_table_entry:
 			j++;
-		    } while (j < nbNodeTable);
+		    } while (j < bind->nbNodes);
 		}
 		/*
 		* If everything is fine, then add the IDC target-node to
@@ -23863,6 +23875,8 @@ xmlSchemaBubbleIDCNodeTables(xmlSchemaValidCtxtPtr vctxt)
 				goto internal_error;
 			}
 			xmlSchemaItemListAdd(parBind->dupls, parNode);
+		        dupls = (xmlSchemaPSVIIDCNodePtr *)
+                            parBind->dupls->items;
 		    } else {
 			/*
 			* Add the node-table entry (node and key-sequence) of
