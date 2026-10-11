@@ -10,7 +10,7 @@ namespace libxmljs {
 
 class XmlTextWriter : public Napi::ObjectWrap<XmlTextWriter> {
 public:
-  static Napi::FunctionReference constructor;
+  static Napi::FunctionReference &constructor(Napi::Env env);
 
   explicit XmlTextWriter(const Napi::CallbackInfo &info);
   ~XmlTextWriter() override;

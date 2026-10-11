@@ -614,7 +614,8 @@ htmlSkipBlankChars(xmlParserCtxtPtr ctxt) {
 	    if (*ctxt->input->cur == 0)
 		xmlParserInputGrow(ctxt->input, INPUT_CHUNK);
 	}
-	res++;
+	if (res < INT_MAX)
+	    res++;
     }
     return(res);
 }
@@ -2513,10 +2514,12 @@ htmlNewDocNoDtD(const xmlChar *URI, const xmlChar *ExternalID) {
     cur->refs = NULL;
     cur->_private = NULL;
     cur->charset = XML_CHAR_ENCODING_UTF8;
-    cur->properties = XML_DOC_HTML | XML_DOC_USERBUILT;
+    XML_DOC_SET_PROPERTIES(cur, XML_DOC_HTML | XML_DOC_USERBUILT);
     if ((ExternalID != NULL) ||
 	(URI != NULL))
 	xmlCreateIntSubset(cur, BAD_CAST "html", ExternalID, URI);
+    if ((__xmlRegisterCallbacks) && (xmlRegisterNodeDefaultValue))
+	xmlRegisterNodeDefaultValue((xmlNodePtr)cur);
     return(cur);
 }
 
@@ -5185,6 +5188,7 @@ htmlCreateMemoryParserCtxt(const char *buffer, int size) {
 
     input = xmlNewInputStream(ctxt);
     if (input == NULL) {
+	xmlFreeParserInputBuffer(buf);
 	xmlFreeParserCtxt(ctxt);
 	return(NULL);
     }
@@ -6751,6 +6755,8 @@ htmlCtxtReset(htmlParserCtxtPtr ctxt)
     ctxt->nameNr = 0;
     ctxt->name = NULL;
 
+    ctxt->nsNr = 0;
+
     DICT_FREE(ctxt->version);
     ctxt->version = NULL;
     DICT_FREE(ctxt->encoding);
@@ -6999,7 +7005,9 @@ htmlReadMemory(const char *buffer, int size, const char *URL, const char *encodi
  * @encoding:  the document encoding, or NULL
  * @options:  a combination of htmlParserOption(s)
  *
- * parse an XML from a file descriptor and build a tree.
+ * parse an HTML from a file descriptor and build a tree.
+ * NOTE that the file descriptor will not be closed when the
+ *      reader is closed or reset.
  *
  * Returns the resulting document tree
  */
@@ -7008,17 +7016,17 @@ htmlReadFd(int fd, const char *URL, const char *encoding, int options)
 {
     htmlParserCtxtPtr ctxt;
     xmlParserInputBufferPtr input;
-    xmlParserInputPtr stream;
+    htmlParserInputPtr stream;
 
     if (fd < 0)
         return (NULL);
-    xmlInitParser();
 
     xmlInitParser();
     input = xmlParserInputBufferCreateFd(fd, XML_CHAR_ENCODING_NONE);
     if (input == NULL)
         return (NULL);
-    ctxt = xmlNewParserCtxt();
+    input->closecallback = NULL;
+    ctxt = htmlNewParserCtxt();
     if (ctxt == NULL) {
         xmlFreeParserInputBuffer(input);
         return (NULL);
@@ -7026,7 +7034,7 @@ htmlReadFd(int fd, const char *URL, const char *encoding, int options)
     stream = xmlNewIOInputStream(ctxt, input, XML_CHAR_ENCODING_NONE);
     if (stream == NULL) {
         xmlFreeParserInputBuffer(input);
-	xmlFreeParserCtxt(ctxt);
+	htmlFreeParserCtxt(ctxt);
         return (NULL);
     }
     inputPush(ctxt, stream);

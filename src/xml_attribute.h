@@ -12,18 +12,14 @@ class XmlElement;
 class XmlAttribute : public Napi::ObjectWrap<XmlAttribute>, public XmlNode {
 public:
   using Napi::ObjectWrap<XmlAttribute>::Unwrap;
-  static Napi::FunctionReference constructor;
+  static Napi::FunctionReference &constructor(Napi::Env env);
 
   XmlAttribute(const Napi::CallbackInfo& info);
 
   static void Init(Napi::Env env, Napi::Object exports);
 
-  // Factory: create from an existing element+name+value (set/update attr)
-  static Napi::Object New(Napi::Env env, xmlNode *xml_obj,
-                          const xmlChar *name, const xmlChar *value);
-
   // Factory: wrap an existing xmlAttr
-  static Napi::Object New(Napi::Env env, xmlAttr *attr);
+  static Napi::Value New(Napi::Env env, xmlAttr *attr);
 
   // XmlNode virtual implementations
   Napi::Object Value_() override { return Napi::ObjectWrap<XmlAttribute>::Value(); }

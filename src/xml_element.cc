@@ -11,7 +11,12 @@
 
 namespace libxmljs {
 
-Napi::FunctionReference XmlElement::constructor;
+static bool sibling_will_merge(xmlNode *cur, xmlNode *elem, bool prev);
+
+// Per-env so each worker thread gets its own constructor reference.
+Napi::FunctionReference &XmlElement::constructor(Napi::Env env) {
+  return GetInstanceData(env)->element;
+}
 
 // doc, name, content
 XmlElement::XmlElement(const Napi::CallbackInfo& info)
@@ -30,7 +35,10 @@ XmlElement::XmlElement(const Napi::CallbackInfo& info)
     return;
   }
 
-  XmlDocument *document = XmlDocument::Unwrap(info[0].As<Napi::Object>());
+  XmlDocument *document =
+      info[0].As<Napi::Object>().InstanceOf(XmlDocument::constructor(env).Value())
+          ? XmlDocument::Unwrap(info[0].As<Napi::Object>())
+          : nullptr;
   if (!document) {
     Napi::TypeError::New(env, "first argument must be a Document")
         .ThrowAsJavaScriptException();
@@ -103,17 +111,16 @@ void XmlElement::Init(Napi::Env env, Napi::Object exports) {
     InstanceMethod("addNextSibling", &XmlElement::AddNextSibling),
     InstanceMethod("replace",      &XmlElement::Replace),
   });
-  constructor = Napi::Persistent(func);
-  constructor.SuppressDestruct();
+  constructor(env) = Napi::Persistent(func);
   exports.Set("Element", func);
 }
 
 Napi::Object XmlElement::New(Napi::Env env, xmlNode *node) {
-  if (node->_private) {
-    return static_cast<XmlNode *>(node->_private)->Value_();
+  if (XmlNode *existing = XmlNode::live_wrapper(node)) {
+    return existing->Value_();
   }
 
-  Napi::Object obj = constructor.New({});
+  Napi::Object obj = constructor(env).New({});
   XmlElement *elem = Napi::ObjectWrap<XmlElement>::Unwrap(obj);
 
   // Initialize the XmlNode base.
@@ -137,7 +144,15 @@ Napi::Value XmlElement::Name(const Napi::CallbackInfo& info) {
     return get_name(env);
   }
 
-  std::string name = info[0].As<Napi::String>().Utf8Value();
+  if (!is_tree_node(xml_obj)) {
+    Napi::Error::New(env, "Cannot rename this node type")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
+  std::string name;
+  if (!ToUtf8(env, info[0], name)) {
+    return env.Null();
+  }
   set_name(name.c_str());
   return info.This();
 }
@@ -145,16 +160,34 @@ Napi::Value XmlElement::Name(const Napi::CallbackInfo& info) {
 Napi::Value XmlElement::Attr(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
 
+  std::string name;
+  if (!ToUtf8(env, info[0], name)) {
+    return env.Null();
+  }
+
   // getter
   if (info.Length() == 1) {
-    std::string name = info[0].As<Napi::String>().Utf8Value();
+    if (!has_element_fields(xml_obj)) {
+      return env.Null();
+    }
     return get_attr(env, name.c_str());
   }
 
   // setter
-  std::string name = info[0].As<Napi::String>().Utf8Value();
-  std::string value = info[1].As<Napi::String>().Utf8Value();
-  set_attr(env, name.c_str(), value.c_str());
+  if (!has_element_fields(xml_obj)) {
+    Napi::Error::New(env, "Cannot set attributes on this node type")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
+  std::string value;
+  if (!ToUtf8(env, info[1], value)) {
+    return env.Null();
+  }
+  if (!set_attr(env, name.c_str(), value.c_str())) {
+    Napi::Error::New(env, "Could not set attribute")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
 
   return info.This();
 }
@@ -165,6 +198,17 @@ Napi::Value XmlElement::Attrs(const Napi::CallbackInfo& info) {
 
 Napi::Value XmlElement::AddChild(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
+
+  if (!can_have_children()) {
+    Napi::Error::New(env, "Cannot add nodes to this node type")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
+  if (info.Length() < 1 || !info[0].IsObject()) {
+    Napi::TypeError::New(env, "argument must be an XmlNode")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
 
   XmlNode *child = XmlNode::Unwrap(env, info[0].As<Napi::Object>());
   if (!child) {
@@ -198,6 +242,12 @@ Napi::Value XmlElement::AddChild(const Napi::CallbackInfo& info) {
 Napi::Value XmlElement::AddCData(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
 
+  if (!can_have_children()) {
+    Napi::Error::New(env, "Cannot add nodes to this node type")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
+
   const char *content = nullptr;
   std::string content_str;
   if (info.Length() >= 1 && info[0].IsString()) {
@@ -216,9 +266,17 @@ Napi::Value XmlElement::AddCData(const Napi::CallbackInfo& info) {
 Napi::Value XmlElement::Find(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
 
-  std::string xpath_str = info[0].As<Napi::String>().Utf8Value();
+  std::string xpath_str;
+  if (!ToUtf8(env, info[0], xpath_str)) {
+    return env.Null();
+  }
 
   XmlXpathContext ctxt(xml_obj);
+  if (ctxt.ctxt == nullptr) {
+    Napi::Error::New(env, "Could not create XPath context")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
 
   if (info.Length() == 2) {
     if (info[1].IsString()) {
@@ -229,8 +287,11 @@ Napi::Value XmlElement::Find(const Napi::CallbackInfo& info) {
       Napi::Array properties = namespaces.GetPropertyNames();
       for (uint32_t i = 0; i < properties.Length(); i++) {
         Napi::Value prop_name = properties.Get(i);
-        std::string prefix = prop_name.As<Napi::String>().Utf8Value();
-        std::string uri = namespaces.Get(prop_name).As<Napi::String>().Utf8Value();
+        std::string prefix, uri;
+        if (!ToUtf8(env, prop_name, prefix) ||
+            !ToUtf8(env, namespaces.Get(prop_name), uri)) {
+          return env.Null();
+        }
         ctxt.register_ns((const xmlChar *)prefix.c_str(),
                          (const xmlChar *)uri.c_str());
       }
@@ -255,7 +316,16 @@ Napi::Value XmlElement::Text(const Napi::CallbackInfo& info) {
     return get_content(env);
   }
 
-  std::string content = info[0].As<Napi::String>().Utf8Value();
+  // An entity reference's children belong to the DTD, not to the reference.
+  if (!is_tree_node(xml_obj) || (xml_obj->type == XML_ENTITY_REF_NODE)) {
+    Napi::Error::New(env, "Cannot set the text of this node type")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
+  std::string content;
+  if (!ToUtf8(env, info[0], content)) {
+    return env.Null();
+  }
   set_content(content.c_str());
   return info.This();
 }
@@ -290,6 +360,17 @@ Napi::Value XmlElement::Path(const Napi::CallbackInfo& info) {
 Napi::Value XmlElement::AddPrevSibling(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
 
+  if (!is_tree_node(xml_obj)) {
+    Napi::Error::New(env, "Cannot add nodes to this node type")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
+  if (info.Length() < 1 || !info[0].IsObject()) {
+    Napi::TypeError::New(env, "argument must be an XmlNode")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
+
   XmlNode *new_sibling = XmlNode::Unwrap(env, info[0].As<Napi::Object>());
   if (!new_sibling) {
     Napi::TypeError::New(env, "argument must be an XmlNode")
@@ -302,6 +383,12 @@ Napi::Value XmlElement::AddPrevSibling(const Napi::CallbackInfo& info) {
     Napi::Error::New(env, "Could not add sibling. Failed to copy node to new Document.")
         .ThrowAsJavaScriptException();
     return env.Null();
+  }
+
+  if ((new_sibling->xml_obj == imported_sibling) &&
+      sibling_will_merge(xml_obj, imported_sibling, true)) {
+    // merged sibling will be freed, so ensure we operate on a copy
+    imported_sibling = xmlCopyNode(imported_sibling, 0);
   }
 
   add_prev_sibling(imported_sibling);
@@ -316,6 +403,17 @@ Napi::Value XmlElement::AddPrevSibling(const Napi::CallbackInfo& info) {
 Napi::Value XmlElement::AddNextSibling(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
 
+  if (!is_tree_node(xml_obj)) {
+    Napi::Error::New(env, "Cannot add nodes to this node type")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
+  if (info.Length() < 1 || !info[0].IsObject()) {
+    Napi::TypeError::New(env, "argument must be an XmlNode")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
+
   XmlNode *new_sibling = XmlNode::Unwrap(env, info[0].As<Napi::Object>());
   if (!new_sibling) {
     Napi::TypeError::New(env, "argument must be an XmlNode")
@@ -330,6 +428,12 @@ Napi::Value XmlElement::AddNextSibling(const Napi::CallbackInfo& info) {
     return env.Null();
   }
 
+  if ((new_sibling->xml_obj == imported_sibling) &&
+      sibling_will_merge(xml_obj, imported_sibling, false)) {
+    // merged sibling will be freed, so ensure we operate on a copy
+    imported_sibling = xmlCopyNode(imported_sibling, 0);
+  }
+
   add_next_sibling(imported_sibling);
 
   if (imported_sibling->_private != nullptr) {
@@ -341,6 +445,17 @@ Napi::Value XmlElement::AddNextSibling(const Napi::CallbackInfo& info) {
 
 Napi::Value XmlElement::Replace(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
+
+  if (!is_tree_node(xml_obj)) {
+    Napi::Error::New(env, "Cannot replace this node type")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
+  if (!info[0].IsString() && !info[0].IsObject()) {
+    Napi::TypeError::New(env, "argument must be a string or XmlNode")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
 
   if (info[0].IsString()) {
     std::string content = info[0].As<Napi::String>().Utf8Value();
@@ -390,14 +505,38 @@ Napi::Value XmlElement::get_attr(Napi::Env env, const char *name) {
 }
 
 // TODO(sprsquish) make these work with namespaces
-void XmlElement::set_attr(Napi::Env env, const char *name, const char *value) {
-  XmlAttribute::New(env, xml_obj, (const xmlChar *)name, (const xmlChar *)value);
+bool XmlElement::set_attr(Napi::Env env, const char *name, const char *value) {
+  return xmlSetProp(xml_obj, (const xmlChar *)name, (const xmlChar *)value) !=
+         nullptr;
+}
+
+bool XmlElement::can_have_children() {
+  return has_element_fields(xml_obj) ||
+         (xml_obj->type == XML_DOCUMENT_FRAG_NODE);
+}
+
+// libxml2 merges adjacent text nodes when inserting a sibling and frees the
+// inserted node. Mirror its rules so callers can insert a copy instead and
+// keep the caller's JS text node valid.
+static bool sibling_will_merge(xmlNode *cur, xmlNode *elem, bool prev) {
+  if (elem->type != XML_TEXT_NODE) {
+    return false;
+  }
+  if (cur->type == XML_TEXT_NODE) {
+    return true;
+  }
+  xmlNode *neighbour = prev ? cur->prev : cur->next;
+  return (neighbour != nullptr) && (neighbour->type == XML_TEXT_NODE) &&
+         (neighbour->name == cur->name);
 }
 
 Napi::Value XmlElement::get_attrs(Napi::Env env) {
-  xmlAttr *attr = xml_obj->properties;
-
   Napi::Array attributes = Napi::Array::New(env);
+  if (!has_element_fields(xml_obj)) {
+    return attributes;
+  }
+
+  xmlAttr *attr = xml_obj->properties;
   if (!attr) {
     return attributes;
   }

@@ -60,7 +60,7 @@ public:
 class XmlSaxParser : public Napi::ObjectWrap<XmlSaxParser>,
                      public SaxParserBase {
 public:
-  static Napi::FunctionReference constructor;
+  static Napi::FunctionReference &constructor(Napi::Env env);
 
   explicit XmlSaxParser(const Napi::CallbackInfo &info);
   ~XmlSaxParser() override = default;
@@ -76,7 +76,7 @@ public:
 class XmlSaxPushParser : public Napi::ObjectWrap<XmlSaxPushParser>,
                          public SaxParserBase {
 public:
-  static Napi::FunctionReference constructor;
+  static Napi::FunctionReference &constructor(Napi::Env env);
 
   explicit XmlSaxPushParser(const Napi::CallbackInfo &info);
   ~XmlSaxPushParser() override = default;

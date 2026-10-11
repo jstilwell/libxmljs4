@@ -1,7 +1,5 @@
-!CLAUDE.md
 .lock-wscript
 *.swp
-bin/
 build/
 dist/
 node_modules/
@@ -10,3 +8,4 @@ npm-debug.log
 .vscode
 .idea
 prebuilds/
+*.gch

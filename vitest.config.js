@@ -6,13 +6,7 @@ export default defineConfig({
     setupFiles: ['./test/setup.js'],
     pool: 'forks',
     execArgv: ['--expose_gc'],
-    // These tests pass but crash the worker on teardown due to a
-    // GC-during-shutdown edge case in the N-API cleanup hooks.
-    // They are run separately in CI if needed.
-    exclude: [
-      'test/memory_management.test.js',
-      'test/ref_integrity.test.js',
-      '**/node_modules/**',
-    ],
+    // .claude/ holds temporary git worktrees with their own copies of test/.
+    exclude: ['**/node_modules/**', '.claude/**'],
   },
 });

@@ -24,9 +24,14 @@
 #include "xml_syntax_error.h"
 #include "xml_text.h"
 
+#include "libxmljs.h"
+
 namespace libxmljs {
 
-Napi::FunctionReference XmlDocument::constructor;
+// Per-env so each worker thread gets its own constructor reference.
+Napi::FunctionReference &XmlDocument::constructor(Napi::Env env) {
+  return GetInstanceData(env)->document;
+}
 
 Napi::Value XmlDocument::Encoding(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
@@ -43,7 +48,10 @@ Napi::Value XmlDocument::Encoding(const Napi::CallbackInfo& info) {
   }
 
   // set the encoding otherwise
-  std::string encoding = info[0].As<Napi::String>().Utf8Value();
+  std::string encoding;
+  if (!ToUtf8(env, info[0], encoding)) {
+    return env.Null();
+  }
   setEncoding(encoding.c_str());
   return info.This();
 }
@@ -88,8 +96,14 @@ Napi::Value XmlDocument::Root(const Napi::CallbackInfo& info) {
 
   // set the element as the root element for the document
   // allows for proper retrieval of root later
-  XmlNode *node = XmlNode::Unwrap(env, info[0].As<Napi::Object>());
-  assert(node);
+  XmlNode *node = info[0].IsObject()
+                      ? XmlNode::Unwrap(env, info[0].As<Napi::Object>())
+                      : nullptr;
+  if ((node == nullptr) || !is_tree_node(node->xml_obj)) {
+    Napi::TypeError::New(env, "root must be a node")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
   xmlDocSetRootElement(xml_obj, node->xml_obj);
   node->ref_wrapped_ancestor();
   return info[0];
@@ -135,7 +149,10 @@ Napi::Value XmlDocument::GetDtd(const Napi::CallbackInfo& info) {
 Napi::Value XmlDocument::SetDtd(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
 
-  std::string name = info[0].As<Napi::String>().Utf8Value();
+  std::string name;
+  if (!ToUtf8(env, info[0], name)) {
+    return env.Null();
+  }
 
   // must be set to null in order for xmlCreateIntSubset to ignore them
   const char *extId = NULL;
@@ -256,7 +273,7 @@ Napi::Object XmlDocument::New(Napi::Env env, xmlDoc *doc) {
     return static_cast<XmlDocument *>(doc->_private)->Value();
   }
 
-  Napi::Object obj = constructor.New({});
+  Napi::Object obj = constructor(env).New({});
 
   XmlDocument *document = Napi::ObjectWrap<XmlDocument>::Unwrap(obj);
 
@@ -400,7 +417,14 @@ xmlParserOption getParserOptions(Napi::Object props) {
 Napi::Value XmlDocument::FromHtml(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
 
-  Napi::Object options = info[1].As<Napi::Object>();
+  if (!info[0].IsString() && !info[0].IsBuffer()) {
+    Napi::TypeError::New(env, "source must be a string or Buffer")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
+  // Non-object options (including primitives) have always been ignored.
+  Napi::Object options = info[1].IsObject() ? info[1].As<Napi::Object>()
+                                            : Napi::Object::New(env);
   Napi::Value baseUrlOpt = options.Get("baseUrl");
   Napi::Value encodingOpt = options.Get("encoding");
   Napi::Value excludeImpliedElementsOpt = options.Get("excludeImpliedElements");
@@ -471,6 +495,12 @@ Napi::Value XmlDocument::FromHtml(const Napi::CallbackInfo& info) {
 Napi::Value XmlDocument::FromXml(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
 
+  if (!info[0].IsString() && !info[0].IsBuffer()) {
+    Napi::TypeError::New(env, "source must be a string or Buffer")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
+
   Napi::Array errors = Napi::Array::New(env);
   XmlSyntaxErrorContext errCtx = { env, &errors };
 
@@ -478,7 +508,9 @@ Napi::Value XmlDocument::FromXml(const Napi::CallbackInfo& info) {
   xmlSetStructuredErrorFunc(reinterpret_cast<void *>(&errCtx),
                             XmlSyntaxError::PushToArray);
 
-  Napi::Object options = info[1].As<Napi::Object>();
+  // Non-object options (including primitives) have always been ignored.
+  Napi::Object options = info[1].IsObject() ? info[1].As<Napi::Object>()
+                                            : Napi::Object::New(env);
   Napi::Value baseUrlOpt = options.Get("baseUrl");
   Napi::Value encodingOpt = options.Get("encoding");
 
@@ -534,8 +566,10 @@ Napi::Value XmlDocument::FromXml(const Napi::CallbackInfo& info) {
       xmlError *error = xmlGetLastError();
       if (error) {
         napi_throw(env, XmlSyntaxError::BuildSyntaxError(env, error));
+        xmlFreeDoc(doc);
         return env.Null();
       }
+      xmlFreeDoc(doc);
       Napi::Error::New(env, "Could not perform XInclude substitution")
           .ThrowAsJavaScriptException();
       return env.Null();
@@ -564,7 +598,7 @@ Napi::Value XmlDocument::Validate(const Napi::CallbackInfo& info) {
     return env.Null();
   }
   if (!info[0].IsObject() ||
-      !info[0].As<Napi::Object>().InstanceOf(constructor.Value())) {
+      !info[0].As<Napi::Object>().InstanceOf(constructor(env).Value())) {
     Napi::Error::New(env, "Must pass XmlDocument").ThrowAsJavaScriptException();
     return env.Null();
   }
@@ -579,33 +613,37 @@ Napi::Value XmlDocument::Validate(const Napi::CallbackInfo& info) {
   XmlDocument *documentSchema =
       Napi::ObjectWrap<XmlDocument>::Unwrap(info[0].As<Napi::Object>());
 
-  xmlSchemaParserCtxtPtr parser_ctxt =
-      xmlSchemaNewDocParserCtxt(documentSchema->xml_obj);
+  // Every exit must restore the global error handler (it points at the
+  // stack-local errCtx) and free whatever was created.
+  xmlSchemaParserCtxtPtr parser_ctxt = NULL;
+  xmlSchemaPtr schema = NULL;
+  xmlSchemaValidCtxtPtr valid_ctxt = NULL;
+  const char *failure = NULL;
+  bool valid = false;
+
+  parser_ctxt = xmlSchemaNewDocParserCtxt(documentSchema->xml_obj);
   if (parser_ctxt == NULL) {
-    Napi::Error::New(env, "Could not create context for schema parser")
-        .ThrowAsJavaScriptException();
-    return env.Null();
+    failure = "Could not create context for schema parser";
+  } else if ((schema = xmlSchemaParse(parser_ctxt)) == NULL) {
+    failure = "Invalid XSD schema";
+  } else if ((valid_ctxt = xmlSchemaNewValidCtxt(schema)) == NULL) {
+    failure = "Unable to create a validation context for the schema";
+  } else {
+    valid = xmlSchemaValidateDoc(valid_ctxt, xml_obj) == 0;
   }
-  xmlSchemaPtr schema = xmlSchemaParse(parser_ctxt);
-  if (schema == NULL) {
-    Napi::Error::New(env, "Invalid XSD schema").ThrowAsJavaScriptException();
-    return env.Null();
-  }
-  xmlSchemaValidCtxtPtr valid_ctxt = xmlSchemaNewValidCtxt(schema);
-  if (valid_ctxt == NULL) {
-    Napi::Error::New(env, "Unable to create a validation context for the schema")
-        .ThrowAsJavaScriptException();
-    return env.Null();
-  }
-  bool valid = xmlSchemaValidateDoc(valid_ctxt, xml_obj) == 0;
 
   xmlSetStructuredErrorFunc(NULL, NULL);
+
+  if (valid_ctxt != NULL) xmlSchemaFreeValidCtxt(valid_ctxt);
+  if (schema != NULL) xmlSchemaFree(schema);
+  if (parser_ctxt != NULL) xmlSchemaFreeParserCtxt(parser_ctxt);
+
+  if (failure != NULL) {
+    Napi::Error::New(env, failure).ThrowAsJavaScriptException();
+    return env.Null();
+  }
+
   Value().Set("validationErrors", errors);
-
-  xmlSchemaFreeValidCtxt(valid_ctxt);
-  xmlSchemaFree(schema);
-  xmlSchemaFreeParserCtxt(parser_ctxt);
-
   return Napi::Boolean::New(env, valid);
 }
 
@@ -617,7 +655,7 @@ Napi::Value XmlDocument::RngValidate(const Napi::CallbackInfo& info) {
     return env.Null();
   }
   if (!info[0].IsObject() ||
-      !info[0].As<Napi::Object>().InstanceOf(constructor.Value())) {
+      !info[0].As<Napi::Object>().InstanceOf(constructor(env).Value())) {
     Napi::Error::New(env, "Must pass XmlDocument").ThrowAsJavaScriptException();
     return env.Null();
   }
@@ -632,36 +670,37 @@ Napi::Value XmlDocument::RngValidate(const Napi::CallbackInfo& info) {
   XmlDocument *documentSchema =
       Napi::ObjectWrap<XmlDocument>::Unwrap(info[0].As<Napi::Object>());
 
-  xmlRelaxNGParserCtxtPtr parser_ctxt =
-      xmlRelaxNGNewDocParserCtxt(documentSchema->xml_obj);
+  // Every exit must restore the global error handler (it points at the
+  // stack-local errCtx) and free whatever was created.
+  xmlRelaxNGParserCtxtPtr parser_ctxt = NULL;
+  xmlRelaxNGPtr schema = NULL;
+  xmlRelaxNGValidCtxtPtr valid_ctxt = NULL;
+  const char *failure = NULL;
+  bool valid = false;
+
+  parser_ctxt = xmlRelaxNGNewDocParserCtxt(documentSchema->xml_obj);
   if (parser_ctxt == NULL) {
-    Napi::Error::New(env, "Could not create context for RELAX NG schema parser")
-        .ThrowAsJavaScriptException();
-    return env.Null();
+    failure = "Could not create context for RELAX NG schema parser";
+  } else if ((schema = xmlRelaxNGParse(parser_ctxt)) == NULL) {
+    failure = "Invalid RELAX NG schema";
+  } else if ((valid_ctxt = xmlRelaxNGNewValidCtxt(schema)) == NULL) {
+    failure = "Unable to create a validation context for the RELAX NG schema";
+  } else {
+    valid = xmlRelaxNGValidateDoc(valid_ctxt, xml_obj) == 0;
   }
-
-  xmlRelaxNGPtr schema = xmlRelaxNGParse(parser_ctxt);
-  if (schema == NULL) {
-    Napi::Error::New(env, "Invalid RELAX NG schema").ThrowAsJavaScriptException();
-    return env.Null();
-  }
-
-  xmlRelaxNGValidCtxtPtr valid_ctxt = xmlRelaxNGNewValidCtxt(schema);
-  if (valid_ctxt == NULL) {
-    Napi::Error::New(env,
-                     "Unable to create a validation context for the RELAX NG schema")
-        .ThrowAsJavaScriptException();
-    return env.Null();
-  }
-  bool valid = xmlRelaxNGValidateDoc(valid_ctxt, xml_obj) == 0;
 
   xmlSetStructuredErrorFunc(NULL, NULL);
+
+  if (valid_ctxt != NULL) xmlRelaxNGFreeValidCtxt(valid_ctxt);
+  if (schema != NULL) xmlRelaxNGFree(schema);
+  if (parser_ctxt != NULL) xmlRelaxNGFreeParserCtxt(parser_ctxt);
+
+  if (failure != NULL) {
+    Napi::Error::New(env, failure).ThrowAsJavaScriptException();
+    return env.Null();
+  }
+
   Value().Set("validationErrors", errors);
-
-  xmlRelaxNGFreeValidCtxt(valid_ctxt);
-  xmlRelaxNGFree(schema);
-  xmlRelaxNGFreeParserCtxt(parser_ctxt);
-
   return Napi::Boolean::New(env, valid);
 }
 
@@ -673,7 +712,7 @@ Napi::Value XmlDocument::SchematronValidate(const Napi::CallbackInfo& info) {
     return env.Null();
   }
   if (!info[0].IsObject() ||
-      !info[0].As<Napi::Object>().InstanceOf(constructor.Value())) {
+      !info[0].As<Napi::Object>().InstanceOf(constructor(env).Value())) {
     Napi::Error::New(env, "Must pass XmlDocument").ThrowAsJavaScriptException();
     return env.Null();
   }
@@ -695,6 +734,7 @@ Napi::Value XmlDocument::SchematronValidate(const Napi::CallbackInfo& info) {
 
   xmlSchematronPtr schema = xmlSchematronParse(parser_ctxt);
   if (schema == NULL) {
+    xmlSchematronFreeParserCtxt(parser_ctxt);
     Napi::Error::New(env, "Invalid Schematron schema")
         .ThrowAsJavaScriptException();
     return env.Null();
@@ -703,6 +743,8 @@ Napi::Value XmlDocument::SchematronValidate(const Napi::CallbackInfo& info) {
   xmlSchematronValidCtxtPtr valid_ctxt =
       xmlSchematronNewValidCtxt(schema, XML_SCHEMATRON_OUT_ERROR);
   if (valid_ctxt == NULL) {
+    xmlSchematronFree(schema);
+    xmlSchematronFreeParserCtxt(parser_ctxt);
     Napi::Error::New(env,
                      "Unable to create a validation context for the Schematron schema")
         .ThrowAsJavaScriptException();
@@ -762,8 +804,7 @@ void XmlDocument::Init(Napi::Env env, Napi::Object exports) {
     InstanceMethod("type", &XmlDocument::type),
   });
 
-  constructor = Napi::Persistent(func);
-  constructor.SuppressDestruct();
+  constructor(env) = Napi::Persistent(func);
 
   exports.Set("Document", func);
 

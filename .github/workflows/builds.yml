@@ -8,6 +8,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ${{ matrix.os }}
@@ -21,15 +24,20 @@ jobs:
             ubuntu-22.04,
             ubuntu-22.04-arm,
           ]
-        node: [22, 24]
+        node: [22, 24, 26]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.11"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: ${{ matrix.node }}
+      # Node 25 and later no longer bundle corepack. --force lets it replace
+      # the yarn/pnpm shims preinstalled on Windows runners (EEXIST
+      # otherwise), which `corepack enable` below would take over anyway.
+      - if: matrix.node >= 26
+        run: npm install -g corepack@0.36.0 --force
       - run: corepack enable
       - run: pnpm i --frozen-lockfile
         env:
@@ -50,11 +58,11 @@ jobs:
             ubuntu-22.04-arm,
           ]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.11"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
       - run: corepack enable
@@ -62,7 +70,19 @@ jobs:
         env:
           npm_config_build_from_source: true
       - run: pnpm prebuild
-      - uses: actions/upload-artifact@v4
+      - run: pnpm build:ts
+      # Load the binary just built. With build/ removed, node-gyp-build can
+      # only resolve it from prebuilds/. Every runner in this matrix builds
+      # for its own architecture (none cross-compile), so each prebuild can
+      # be loaded where it was built. One command per step: a multi-line
+      # PowerShell step only fails on the last command's exit code.
+      - run: |
+          node -e "require('fs').rmSync('build', { recursive: true, force: true })"
+      - run: |
+          node -e "console.log(require('node-gyp-build').path('.'))"
+      - run: |
+          node -e "const l=require('./index.js'); if (l.parseXml('<a/>').root().name()!=='a') process.exit(1)"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ${{ matrix.os }}-prebuild
           path: "prebuilds/"
@@ -75,7 +95,7 @@ jobs:
     container:
       image: node:${{ matrix.node }}-alpine
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: |
           apk add --no-cache python3 make g++
       - run: corepack enable
@@ -86,7 +106,14 @@ jobs:
       - run: pnpm tsd
       - run: pnpm test
       - run: pnpm prebuild
-      - uses: actions/upload-artifact@v4
+      # Load the musl prebuild just built, as in the prebuild job above.
+      - run: |
+          node -e "require('fs').rmSync('build', { recursive: true, force: true })"
+      - run: |
+          node -e "console.log(require('node-gyp-build').path('.'))"
+      - run: |
+          node -e "const l=require('./index.js'); if (l.parseXml('<a/>').root().name()!=='a') process.exit(1)"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: matrix.node == 24
         with:
           name: alpine-prebuild
@@ -98,8 +125,8 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: prebuilds
           pattern: "*-prebuild"
@@ -131,7 +158,7 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
         run: tar -czf "libxmljs4-prebuilds-$TAG.tar.gz" -C prebuilds .
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: libxmljs4-prebuilds-*.tar.gz
         env:

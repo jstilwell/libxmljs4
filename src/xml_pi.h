@@ -11,7 +11,7 @@ class XmlProcessingInstruction : public Napi::ObjectWrap<XmlProcessingInstructio
                                  public XmlNode {
 public:
   using Napi::ObjectWrap<XmlProcessingInstruction>::Unwrap;
-  static Napi::FunctionReference constructor;
+  static Napi::FunctionReference &constructor(Napi::Env env);
 
   XmlProcessingInstruction(const Napi::CallbackInfo& info);
 

@@ -12,7 +12,7 @@ namespace libxmljs {
 class XmlElement : public Napi::ObjectWrap<XmlElement>, public XmlNode {
 public:
   using Napi::ObjectWrap<XmlElement>::Unwrap;
-  static Napi::FunctionReference constructor;
+  static Napi::FunctionReference &constructor(Napi::Env env);
 
   XmlElement(const Napi::CallbackInfo& info);
 
@@ -64,7 +64,8 @@ private:
   Napi::Value get_path(Napi::Env env);
   Napi::Value get_attr(Napi::Env env, const char *name);
   Napi::Value get_attrs(Napi::Env env);
-  void set_attr(Napi::Env env, const char *name, const char *value);
+  bool set_attr(Napi::Env env, const char *name, const char *value);
+  bool can_have_children();
   void add_cdata(xmlNode *cdata);
   void unlink_children();
   void set_content(const char *content);

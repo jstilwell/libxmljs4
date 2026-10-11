@@ -10,7 +10,7 @@ namespace libxmljs {
 class XmlText : public Napi::ObjectWrap<XmlText>, public XmlNode {
 public:
   using Napi::ObjectWrap<XmlText>::Unwrap;
-  static Napi::FunctionReference constructor;
+  static Napi::FunctionReference &constructor(Napi::Env env);
 
   XmlText(const Napi::CallbackInfo& info);
 

@@ -5,9 +5,14 @@
 #include "xml_comment.h"
 #include "xml_document.h"
 
+#include "libxmljs.h"
+
 namespace libxmljs {
 
-Napi::FunctionReference XmlComment::constructor;
+// Per-env so each worker thread gets its own constructor reference.
+Napi::FunctionReference &XmlComment::constructor(Napi::Env env) {
+  return GetInstanceData(env)->comment;
+}
 
 XmlComment::XmlComment(const Napi::CallbackInfo& info)
     : Napi::ObjectWrap<XmlComment>(info), XmlNode(nullptr) {
@@ -23,7 +28,8 @@ XmlComment::XmlComment(const Napi::CallbackInfo& info)
     return;
   }
 
-  if (!info[0].As<Napi::Object>().InstanceOf(XmlDocument::constructor.Value())) {
+  if (!info[0].IsObject() ||
+      !info[0].As<Napi::Object>().InstanceOf(XmlDocument::constructor(env).Value())) {
     Napi::Error::New(env, "document argument must be an instance of Document")
         .ThrowAsJavaScriptException();
     return;
@@ -56,11 +62,11 @@ XmlComment::XmlComment(const Napi::CallbackInfo& info)
 
 // static
 Napi::Object XmlComment::New(Napi::Env env, xmlNode *node) {
-  if (node->_private) {
-    return static_cast<XmlNode *>(node->_private)->Value_();
+  if (XmlNode *existing = XmlNode::live_wrapper(node)) {
+    return existing->Value_();
   }
 
-  Napi::Object obj = constructor.New({});
+  Napi::Object obj = constructor(env).New({});
   XmlComment *wrapper = Napi::ObjectWrap<XmlComment>::Unwrap(obj);
   wrapper->xml_obj = node;
   node->_private = static_cast<XmlNode *>(wrapper);
@@ -81,7 +87,10 @@ Napi::Value XmlComment::Text(const Napi::CallbackInfo& info) {
     return get_content(env);
   }
 
-  std::string content = info[0].As<Napi::String>().Utf8Value();
+  std::string content;
+  if (!ToUtf8(env, info[0], content)) {
+    return env.Null();
+  }
   set_content(content.c_str());
   return Value_();
 }
@@ -119,8 +128,7 @@ void XmlComment::Init(Napi::Env env, Napi::Object exports) {
     InstanceMethod("text", &XmlComment::Text),
   });
 
-  constructor = Napi::Persistent(func);
-  constructor.SuppressDestruct();
+  constructor(env) = Napi::Persistent(func);
   exports.Set("Comment", func);
 }
 
