@@ -102,10 +102,11 @@ describe('memory management', () => {
       const doc = makeDocument();
       const el = doc.get('//center');
 
-      el.namespace('bar', null);
+      // A non-string href throws since 2.0.0, so give the namespace one.
+      el.namespace('bar', 'urn:bar');
       const xmlMemBefore = libxml.memoryUsage();
 
-      for (let i; i < 1000; i += 1) {
+      for (let i = 0; i < 1000; i += 1) {
         el.namespaces();
       }
       process.nextTick(() => {
