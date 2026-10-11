@@ -145,7 +145,7 @@ describe('xml sax parser', () => {
 
   it('sax', () => {
     const callbacks = clone(callbackTest);
-     
+
     const str = fs.readFileSync(filename, 'utf8');
     const parser = createParser('SaxParser', callbacks);
 
@@ -155,7 +155,7 @@ describe('xml sax parser', () => {
 
   it('sax_push_chunked', () => {
     const callbacks = clone(callbackTest);
-     
+
     const str_ary = fs.readFileSync(filename, 'utf8').split('\n');
     const parser = createParser('SaxPushParser', callbacks);
 
@@ -171,7 +171,7 @@ describe('xml sax parser', () => {
 
   it('string_parser', () => {
     const callbacks = clone(callbackTest);
-     
+
     const str = fs.readFileSync(filename, 'utf8');
     const parser = createParser('SaxParser', callbacks);
 
@@ -190,6 +190,8 @@ describe('xml sax parser', () => {
       const elements = [];
 
       expect(parser).toBeInstanceOf(EventEmitter);
+      expect(parser).toBeInstanceOf(libxml[parserType]);
+      expect(new libxml[parserType]()).toBeInstanceOf(libxml[parserType]);
       // The methods are still own properties of the native prototype.
       const proto = Object.getPrototypeOf(parser);
       expect(Object.hasOwn(proto, 'on')).toBe(true);

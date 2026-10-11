@@ -1,6 +1,10 @@
 import bindings from './bindings';
 import { Element } from './element';
-import type { ParserOptions } from './types';
+import type {
+  DocumentConstructor,
+  ParsedDocument,
+  ParserOptions,
+} from './types';
 
 function assertRoot(doc: any): void {
   if (!doc.root()) {
@@ -79,12 +83,12 @@ Document.prototype.namespaces = function namespaces(this: any) {
   return this.root().namespaces();
 };
 
-export default Document;
+export default Document as unknown as DocumentConstructor;
 
 // Validate the HTML parsers' options argument. `null` is treated like an
 // omitted argument; passed through, it would reach the native layer, which
 // cannot read properties from it and aborts the process.
-function htmlOptions(fn: string, opts: ParserOptions): ParserOptions {
+function htmlOptions(fn: string, opts: ParserOptions | null): ParserOptions {
   if (opts === undefined || opts === null) {
     return {};
   }
@@ -94,17 +98,25 @@ function htmlOptions(fn: string, opts: ParserOptions): ParserOptions {
   return opts;
 }
 
+/**
+ * Parse an HTML document. Parse errors and warnings are collected in the
+ * returned document's `errors`.
+ */
 export function fromHtml(
-  string: string,
-  opts: ParserOptions = {}
-): typeof Document {
-  return bindings.fromHtml(string, htmlOptions('fromHtml', opts));
+  source: string | Buffer,
+  opts: ParserOptions | null = {}
+): ParsedDocument {
+  return bindings.fromHtml(source, htmlOptions('fromHtml', opts));
 }
 
+/**
+ * Parse an HTML fragment, without the implied `html`/`body` elements and
+ * default doctype that `fromHtml` adds.
+ */
 export function fromHtmlFragment(
-  string: string,
-  opts: ParserOptions = {}
-): typeof Document {
+  source: string | Buffer,
+  opts: ParserOptions | null = {}
+): ParsedDocument {
   // Override doctype/implied without mutating the caller's object. The
   // native layer reads options with an ordinary property lookup, so an
   // object inheriting from the caller's sees every option they set,
@@ -112,14 +124,19 @@ export function fromHtmlFragment(
   const fragmentOpts = Object.create(htmlOptions('fromHtmlFragment', opts));
   fragmentOpts.doctype = false;
   fragmentOpts.implied = false;
-  return bindings.fromHtml(string, fragmentOpts);
+  return bindings.fromHtml(source, fragmentOpts);
 }
 
+/**
+ * Parse an XML document. Throws a `SyntaxError` if the input is not
+ * well-formed (unless `recover` is set) or has no root element. Recoverable
+ * errors and warnings are collected in the returned document's `errors`.
+ */
 export function fromXml(
-  string: string,
-  options: ParserOptions = {}
-): typeof Document {
+  source: string | Buffer,
+  options: ParserOptions | null = {}
+): ParsedDocument {
   // `null` would abort the process in the native layer; treat it like an
   // omitted argument. Other values are passed through unchanged, as before.
-  return bindings.fromXml(string, options ?? {});
+  return bindings.fromXml(source, options ?? {});
 }

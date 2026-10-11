@@ -36,9 +36,14 @@ libxmljs4 starts at version `1.0.0` (forked from libxmljs2 `0.37.0`). The major 
 - **Patched libxml2**: The bundled libxml2 is 2.9.14 with Debian's and Ubuntu's security backports applied (see `vendor/libxml/PATCHES.md`), and `libxml_version` reports `2.9.14`. libxmljs2 shipped an unpatched mid-2021 snapshot that reported itself as 2.9.9. Two backported fixes reject inputs libxmljs2 accepted: entity expansion beyond 10 MB that is also more than 10 times the input size fails with "Maximum entity amplification factor exceeded" (also with `huge`), and without `huge`, CDATA sections over 10,000,000 bytes and quoted literals or NMTOKENs over 50,000 characters are rejected. HTML parsing output is unchanged.
 - **XPath namespace and document nodes**: `find('//namespace::*')` returns `Namespace` objects, and an XPath that selects the document node (for example `find('..')` from the root) returns the `Document`. In libxmljs2 both crashed the process.
 - **Invalid arguments throw**: Passing the wrong kind of value, such as `parseXml(null)`, `addChild(null)`, or a non-node to `addNextSibling()`, throws a `TypeError` instead of crashing. String arguments are still converted with `String(value)` as in libxmljs2, so `attr('count', 5)` sets `count="5"`.
+- **Error lists are capped**: `doc.errors` and `doc.validationErrors` hold at most 10,000 entries by default, set by the `maxErrors` option. libxmljs2 built a JS `Error` for every libxml2 diagnostic, so a small malformed input could use hundreds of megabytes.
+- **HTML-only options are ignored by `parseXml`**: `doctype` and `implied` apply to `parseHtml` only. libxml2 uses the same flag bits for different XML options, so in libxmljs2 `parseXml(xml, { doctype: false })` loaded the external DTD and `implied: false` acted as `nsclean`.
+- **Typed arrays and `DataView` sources**: The parse functions read any typed array or `DataView` as raw bytes, like a `Buffer`. A `DataView` crashed libxmljs2.
+- **`old` works**: The documented `old` parser option is an alias for `old10`. In libxmljs2 it was silently ignored.
+- **`SaxTransform` reports listener errors at end of input**: An exception thrown by a listener during the final push (for example in an `endDocument` handler) fails the stream, as it already did for earlier chunks. libxmljs2 swallowed it.
 - **SAX re-entrancy**: Calling `parseString()` or `push()` from inside one of the same parser's event handlers throws an `Error`. Parsing an empty string emits an `error` event.
 - **Node-API (N-API)**: Native addon now uses ABI-stable Node-API instead of NAN. Prebuilt binaries work across Node.js versions without recompilation.
-- **TypeScript source**: The JS wrapper layer is now written in TypeScript with generated type definitions.
+- **TypeScript source**: The JS wrapper layer is now written in TypeScript with generated type definitions. They follow what the runtime returns, so some differ from libxmljs2's hand-written ones: `find()` and `get()` default to `Element` and take a type argument for other results, `get()` returns `undefined` when nothing matches, both return `null` for an invalid expression, the parse functions return `ParsedDocument`, `childNodes()` returns a `ChildNode` union, the `str1`–`str3` fields of errors are strings, and `Node`, `Attribute`, and `Namespace` are types only. See [TypeScript](#typescript).
 - **ESM support**: Both `require()` and `import` work via the `exports` field in package.json.
 - **Removed compatibility synonyms**: `parseXmlString` (use `parseXml`), `parseHtmlString` (use `parseHtml`), `Document.fromXmlString` (use `Document.fromXml`), `Document.fromHtmlString` (use `Document.fromHtml`).
 - **Replaced `bindings` package**: Native addon loading no longer depends on the `bindings` npm package.
@@ -49,7 +54,7 @@ libxmljs4 starts at version `1.0.0` (forked from libxmljs2 `0.37.0`). The major 
 - **Narrower Node.js support**: `engines.node` is `^22.22.2 || ^24.15.0 || >=26`.
 - **`node-gyp` is not a runtime dependency**: It is only needed to build from source, so it moved to `devDependencies`. Installing this package no longer pulls it in.
 - **`parseHtmlFragment` leaves its options object unchanged**: libxmljs2 set `doctype` and `implied` to `false` on the object the caller passed in.
-- **SAX parsers are `instanceof EventEmitter`**: `SaxParser` and `SaxPushParser` instances have `EventEmitter.prototype` on their prototype chain. libxmljs2 only copied the EventEmitter methods onto them.
+- **SAX parsers are `instanceof EventEmitter`**: `SaxParser` and `SaxPushParser` instances have `EventEmitter.prototype` on their prototype chain, and `new SaxParser() instanceof SaxParser` is `true` (likewise for `SaxPushParser`). libxmljs2 only copied the EventEmitter methods onto them.
 
 See [CHANGELOG.md](CHANGELOG.md) for the full release history.
 
@@ -71,7 +76,7 @@ const xmlDoc = libxmljs.parseXml(
 );
 
 console.log(xmlDoc.get('//grandchild').text()); // "grandchild content"
-console.log(xmlDoc.root().childNodes()[0].attr('foo').value()); // "bar"
+console.log(xmlDoc.get('//child').attr('foo').value()); // "bar"
 ```
 
 ### Parsing HTML
@@ -94,7 +99,9 @@ const doc = libxmljs.parseXml(xml, {
 });
 ```
 
-Other options: `noent`, `dtdload`, `dtdattr`, `dtdvalid`, `xinclude`, `huge`, `noerror`, `nowarning`, `pedantic`, `sax1`, `nodict`, `nsclean`, `nocdata`, `compact`, `old`, `nobasefix`, `big_lines`, `ignore_enc`.
+Other options: `noent`, `dtdload`, `dtdattr`, `dtdvalid`, `xinclude`, `huge`, `noerror`, `nowarning`, `pedantic`, `sax1`, `nodict`, `nsclean`, `nocdata`, `compact`, `old10` (or its alias `old`), `nobasefix`, `big_lines`, `ignore_enc`.
+
+Parse errors are collected in `doc.errors`, up to `maxErrors` entries (default `10000`; pass `Infinity` for no limit). `validate()`, `rngValidate()`, and `schematronValidate()` take the same option as an optional second argument, for example `doc.validate(xsd, { maxErrors: 100 })`, and limit `doc.validationErrors` the same way.
 
 Read [Security considerations](#security-considerations) before enabling `noent`, `dtdload`, `dtdattr`, `dtdvalid`, `xinclude`, or `huge`.
 
@@ -205,6 +212,34 @@ libxmljs.libxml_version; // Underlying libxml2 version
 libxmljs.memoryUsage(); // Bytes allocated by libxml2
 libxmljs.nodeCount(); // Number of live XML nodes
 ```
+
+### TypeScript
+
+Type definitions are included for both `require` and `import`. Each class is both a value and a type, and the parse functions return a `ParsedDocument`, a `Document` whose `errors` are always set. `Node`, `Attribute`, and `Namespace` are exported as types only.
+
+`find()` and `get()` assume the expression selects elements, like the DOM's `querySelector()`. Pass a type argument for other nodes, or for an expression that computes a value.
+
+```typescript
+import { parseXml, Element, type Document, type Text } from 'libxmljs4';
+
+const doc: Document = parseXml('<list><item id="a">one</item><!--x--></list>');
+
+for (const item of doc.find('//item') ?? []) {
+  console.log(item.attr('id')?.value()); // "a"
+}
+console.log(doc.get<Text>('//item/text()')?.text()); // "one"
+console.log(doc.get<number>('count(//item)')); // 1
+
+// childNodes() returns elements, text, comments, and processing
+// instructions; narrow with instanceof.
+for (const node of doc.root()?.childNodes() ?? []) {
+  if (node instanceof Element) {
+    console.log(node.name()); // "item"
+  }
+}
+```
+
+SAX listeners are typed by event name, both on `SaxParser`/`SaxPushParser` and on `SaxTransform`.
 
 ### Worker threads
 
