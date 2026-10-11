@@ -97,7 +97,9 @@ SaxParserBase::~SaxParserBase() {
 }
 
 void SaxParserBase::initializeContext() {
-  assert(context_);
+  if (context_ == nullptr) {
+    return;
+  }
   context_->validate = 0;
   context_->_private = this;
 }
@@ -115,8 +117,19 @@ void SaxParserBase::releaseContext() {
 }
 
 void SaxParserBase::Callback(const char *what, int argc, Napi::Value argv[]) {
-  assert(env_ != nullptr);
+  if (env_ == nullptr) {
+    return;
+  }
   Napi::Env env = *env_;
+
+  // A listener threw: stop parsing and let the exception surface once the
+  // parse call returns, instead of calling into JS with it pending.
+  if (env.IsExceptionPending()) {
+    if (context_ != nullptr) {
+      xmlStopParser(context_);
+    }
+    return;
+  }
 
   Napi::Object self = SelfObject();
 
@@ -137,6 +150,13 @@ void SaxParserBase::Callback(const char *what, int argc, Napi::Value argv[]) {
 
 void SaxParserBase::parse_string(const char *str, unsigned int size) {
   context_ = xmlCreateMemoryParserCtxt(str, static_cast<int>(size));
+  if (context_ == nullptr) {
+    // libxml2 refuses to create a context for empty input; report it the way
+    // the parser reports any other malformed document.
+    Napi::Value argv[1] = {Napi::String::New(*env_, "Document is empty\n")};
+    Callback("error", 1, argv);
+    return;
+  }
   initializeContext();
   context_->replaceEntities = 1;
   xmlSAXHandler *old_sax = context_->sax;
@@ -148,11 +168,17 @@ void SaxParserBase::parse_string(const char *str, unsigned int size) {
 
 void SaxParserBase::initialize_push_parser() {
   context_ = xmlCreatePushParserCtxt(&sax_handler_, nullptr, nullptr, 0, "");
+  if (context_ == nullptr) {
+    return;
+  }
   context_->replaceEntities = 1;
   initializeContext();
 }
 
 void SaxParserBase::push(const char *str, unsigned int size, bool terminate) {
+  if (context_ == nullptr) {
+    return;
+  }
   xmlParseChunk(context_, str, static_cast<int>(size), terminate ? 1 : 0);
 }
 
@@ -162,11 +188,17 @@ void SaxParserBase::push(const char *str, unsigned int size, bool terminate) {
 
 void SaxParserBase::start_document(void *context) {
   SaxParserBase *parser = LXJS_GET_PARSER_FROM_CONTEXT(context);
+  if (parser == nullptr) {
+    return;
+  }
   parser->Callback("startDocument");
 }
 
 void SaxParserBase::end_document(void *context) {
   SaxParserBase *parser = LXJS_GET_PARSER_FROM_CONTEXT(context);
+  if (parser == nullptr) {
+    return;
+  }
   parser->Callback("endDocument");
 }
 
@@ -180,7 +212,9 @@ void SaxParserBase::start_element_ns(void *context,
                                      int nb_defaulted,
                                      const xmlChar **attributes) {
   SaxParserBase *parser = LXJS_GET_PARSER_FROM_CONTEXT(context);
-  assert(parser->env_ != nullptr);
+  if ((parser == nullptr) || (parser->env_ == nullptr)) {
+    return;
+  }
   Napi::Env env = *parser->env_;
 
   const int argc = 5;
@@ -246,7 +280,9 @@ void SaxParserBase::end_element_ns(void *context,
                                    const xmlChar *prefix,
                                    const xmlChar *uri) {
   SaxParserBase *parser = LXJS_GET_PARSER_FROM_CONTEXT(context);
-  assert(parser->env_ != nullptr);
+  if ((parser == nullptr) || (parser->env_ == nullptr)) {
+    return;
+  }
   Napi::Env env = *parser->env_;
 
   Napi::Value argv[3];
@@ -261,7 +297,9 @@ void SaxParserBase::end_element_ns(void *context,
 
 void SaxParserBase::characters(void *context, const xmlChar *ch, int len) {
   SaxParserBase *parser = LXJS_GET_PARSER_FROM_CONTEXT(context);
-  assert(parser->env_ != nullptr);
+  if ((parser == nullptr) || (parser->env_ == nullptr)) {
+    return;
+  }
   Napi::Env env = *parser->env_;
 
   Napi::Value argv[1] = {Napi::String::New(env, (const char *)ch, len)};
@@ -270,7 +308,9 @@ void SaxParserBase::characters(void *context, const xmlChar *ch, int len) {
 
 void SaxParserBase::comment(void *context, const xmlChar *value) {
   SaxParserBase *parser = LXJS_GET_PARSER_FROM_CONTEXT(context);
-  assert(parser->env_ != nullptr);
+  if ((parser == nullptr) || (parser->env_ == nullptr)) {
+    return;
+  }
   Napi::Env env = *parser->env_;
 
   Napi::Value argv[1] = {Napi::String::New(env, (const char *)value)};
@@ -279,7 +319,9 @@ void SaxParserBase::comment(void *context, const xmlChar *value) {
 
 void SaxParserBase::cdata_block(void *context, const xmlChar *value, int len) {
   SaxParserBase *parser = LXJS_GET_PARSER_FROM_CONTEXT(context);
-  assert(parser->env_ != nullptr);
+  if ((parser == nullptr) || (parser->env_ == nullptr)) {
+    return;
+  }
   Napi::Env env = *parser->env_;
 
   Napi::Value argv[1] = {Napi::String::New(env, (const char *)value, len)};
@@ -288,7 +330,9 @@ void SaxParserBase::cdata_block(void *context, const xmlChar *value, int len) {
 
 void SaxParserBase::warning(void *context, const char *msg, ...) {
   SaxParserBase *parser = LXJS_GET_PARSER_FROM_CONTEXT(context);
-  assert(parser->env_ != nullptr);
+  if ((parser == nullptr) || (parser->env_ == nullptr)) {
+    return;
+  }
   Napi::Env env = *parser->env_;
 
   char *message = nullptr;
@@ -304,7 +348,9 @@ void SaxParserBase::warning(void *context, const char *msg, ...) {
 
 void SaxParserBase::error(void *context, const char *msg, ...) {
   SaxParserBase *parser = LXJS_GET_PARSER_FROM_CONTEXT(context);
-  assert(parser->env_ != nullptr);
+  if ((parser == nullptr) || (parser->env_ == nullptr)) {
+    return;
+  }
   Napi::Env env = *parser->env_;
 
   char *message = nullptr;
@@ -337,6 +383,13 @@ Napi::Value XmlSaxParser::ParseString(const Napi::CallbackInfo &info) {
 
   LIBXMLJS_ARGUMENT_TYPE_CHECK(info[0], IsString,
                                "Bad Argument: parseString requires a string");
+
+  if (env_ != nullptr) {
+    Napi::Error::New(env, "parseString cannot be called from inside one of "
+                          "this parser's own event handlers")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
 
   std::string parsable = info[0].As<Napi::String>().Utf8Value();
 
@@ -377,10 +430,16 @@ Napi::Value XmlSaxPushParser::Push(const Napi::CallbackInfo &info) {
   LIBXMLJS_ARGUMENT_TYPE_CHECK(info[0], IsString,
                                "Bad Argument: parseString requires a string");
 
+  if (env_ != nullptr) {
+    Napi::Error::New(env, "push cannot be called from inside one of this "
+                          "parser's own event handlers")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
+
   std::string parsable = info[0].As<Napi::String>().Utf8Value();
 
-  bool terminate = (info.Length() > 1) ? info[1].As<Napi::Boolean>().Value()
-                                       : false;
+  bool terminate = (info.Length() > 1) ? info[1].ToBoolean().Value() : false;
 
   Napi::Env local_env = env;
   env_ = &local_env;

@@ -2,6 +2,7 @@
 
 #include "xml_textwriter.h"
 #include "libxmljs.h"
+#include "xml_node.h"
 
 namespace libxmljs {
 
@@ -85,7 +86,9 @@ Napi::Value XmlTextWriter::StartDocument(const Napi::CallbackInfo &info) {
   std::string version_str;
   const char *version = nullptr;
   if (!info[0].IsUndefined() && !info[0].IsNull()) {
-    version_str = info[0].As<Napi::String>().Utf8Value();
+    if (!ToUtf8(env, info[0], version_str)) {
+      return env.Null();
+    }
     version = version_str.c_str();
   }
 
@@ -93,7 +96,9 @@ Napi::Value XmlTextWriter::StartDocument(const Napi::CallbackInfo &info) {
   std::string encoding_str;
   const char *encoding = nullptr;
   if (!info[1].IsUndefined() && !info[1].IsNull()) {
-    encoding_str = info[1].As<Napi::String>().Utf8Value();
+    if (!ToUtf8(env, info[1], encoding_str)) {
+      return env.Null();
+    }
     encoding = encoding_str.c_str();
   }
 
@@ -105,7 +110,9 @@ Napi::Value XmlTextWriter::StartDocument(const Napi::CallbackInfo &info) {
       standalone_str = info[2].As<Napi::Boolean>().Value() ? "yes" : "no";
       standalone = standalone_str.c_str();
     } else if (info[2].IsString()) {
-      standalone_str = info[2].As<Napi::String>().Utf8Value();
+      if (!ToUtf8(env, info[2], standalone_str)) {
+      return env.Null();
+    }
       standalone = standalone_str.c_str();
     }
   }
@@ -133,15 +140,21 @@ Napi::Value XmlTextWriter::StartElementNS(const Napi::CallbackInfo &info) {
   const xmlChar *prefix = nullptr, *name = nullptr, *namespaceURI = nullptr;
 
   if (!info[0].IsUndefined() && !info[0].IsNull()) {
-    prefix_str = info[0].As<Napi::String>().Utf8Value();
+    if (!ToUtf8(env, info[0], prefix_str)) {
+      return env.Null();
+    }
     prefix = (const xmlChar *)prefix_str.c_str();
   }
   if (!info[1].IsUndefined() && !info[1].IsNull()) {
-    name_str = info[1].As<Napi::String>().Utf8Value();
+    if (!ToUtf8(env, info[1], name_str)) {
+      return env.Null();
+    }
     name = (const xmlChar *)name_str.c_str();
   }
   if (!info[2].IsUndefined() && !info[2].IsNull()) {
-    ns_str = info[2].As<Napi::String>().Utf8Value();
+    if (!ToUtf8(env, info[2], ns_str)) {
+      return env.Null();
+    }
     namespaceURI = (const xmlChar *)ns_str.c_str();
   }
 
@@ -168,15 +181,21 @@ Napi::Value XmlTextWriter::StartAttributeNS(const Napi::CallbackInfo &info) {
   const xmlChar *prefix = nullptr, *name = nullptr, *namespaceURI = nullptr;
 
   if (!info[0].IsUndefined() && !info[0].IsNull()) {
-    prefix_str = info[0].As<Napi::String>().Utf8Value();
+    if (!ToUtf8(env, info[0], prefix_str)) {
+      return env.Null();
+    }
     prefix = (const xmlChar *)prefix_str.c_str();
   }
   if (!info[1].IsUndefined() && !info[1].IsNull()) {
-    name_str = info[1].As<Napi::String>().Utf8Value();
+    if (!ToUtf8(env, info[1], name_str)) {
+      return env.Null();
+    }
     name = (const xmlChar *)name_str.c_str();
   }
   if (!info[2].IsUndefined() && !info[2].IsNull()) {
-    ns_str = info[2].As<Napi::String>().Utf8Value();
+    if (!ToUtf8(env, info[2], ns_str)) {
+      return env.Null();
+    }
     namespaceURI = (const xmlChar *)ns_str.c_str();
   }
 
@@ -235,7 +254,10 @@ Napi::Value XmlTextWriter::EndComment(const Napi::CallbackInfo &info) {
 Napi::Value XmlTextWriter::WriteString(const Napi::CallbackInfo &info) {
   Napi::Env env = info.Env();
 
-  std::string str = info[0].As<Napi::String>().Utf8Value();
+  std::string str;
+  if (!ToUtf8(env, info[0], str)) {
+    return env.Null();
+  }
   int result = xmlTextWriterWriteString(textWriter,
                                        (const xmlChar *)str.c_str());
   THROW_ON_ERROR("Failed to write string");
@@ -245,7 +267,7 @@ Napi::Value XmlTextWriter::WriteString(const Napi::CallbackInfo &info) {
 
 Napi::Value XmlTextWriter::OutputMemory(const Napi::CallbackInfo &info) {
   bool clear = (info.Length() == 0) ||
-               info[0].As<Napi::Boolean>().Value();
+               info[0].ToBoolean().Value();
 
   Napi::Value content = BufferContent(info);
 

@@ -23,7 +23,8 @@ XmlProcessingInstruction::XmlProcessingInstruction(const Napi::CallbackInfo& inf
     return;
   }
 
-  if (!info[0].As<Napi::Object>().InstanceOf(XmlDocument::constructor.Value())) {
+  if (!info[0].IsObject() ||
+      !info[0].As<Napi::Object>().InstanceOf(XmlDocument::constructor.Value())) {
     Napi::Error::New(env, "document argument must be an instance of Document")
         .ThrowAsJavaScriptException();
     return;
@@ -73,8 +74,8 @@ XmlProcessingInstruction::XmlProcessingInstruction(const Napi::CallbackInfo& inf
 
 // static
 Napi::Object XmlProcessingInstruction::New(Napi::Env env, xmlNode *node) {
-  if (node->_private) {
-    return static_cast<XmlNode *>(node->_private)->Value_();
+  if (XmlNode *existing = XmlNode::live_wrapper(node)) {
+    return existing->Value_();
   }
 
   Napi::Object obj = constructor.New({});
@@ -99,7 +100,10 @@ Napi::Value XmlProcessingInstruction::Name(const Napi::CallbackInfo& info) {
     return get_name(env);
   }
 
-  std::string name = info[0].As<Napi::String>().Utf8Value();
+  std::string name;
+  if (!ToUtf8(env, info[0], name)) {
+    return env.Null();
+  }
   set_name(name.c_str());
   return Value_();
 }
@@ -111,7 +115,10 @@ Napi::Value XmlProcessingInstruction::Text(const Napi::CallbackInfo& info) {
     return get_content(env);
   }
 
-  std::string content = info[0].As<Napi::String>().Utf8Value();
+  std::string content;
+  if (!ToUtf8(env, info[0], content)) {
+    return env.Null();
+  }
   set_content(content.c_str());
   return Value_();
 }

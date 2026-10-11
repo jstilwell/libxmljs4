@@ -62,7 +62,11 @@ XmlNode::~XmlNode() {
     return;
   }
 
-  xml_obj->_private = nullptr;
+  // A newer wrapper may have taken over this node (see live_wrapper); only
+  // release the back-pointer if it is still ours.
+  if (xml_obj->_private == static_cast<XmlNode *>(this)) {
+    xml_obj->_private = nullptr;
+  }
   if (xml_obj->parent == nullptr) {
     if (get_wrapped_descendant(xml_obj) == nullptr) {
       xmlFreeNode(xml_obj);
@@ -81,8 +85,46 @@ XmlNode::~XmlNode() {
 // ---------------------------------------------------------------------------
 
 // static
+XmlNode *XmlNode::live_wrapper(xmlNode *node) {
+  if (node->_private == nullptr) {
+    return nullptr;
+  }
+  XmlNode *wrapper = static_cast<XmlNode *>(node->_private);
+  if (!wrapper->Value_().IsEmpty()) {
+    return wrapper;
+  }
+  // The JS object was garbage collected but its finalizer has not run yet
+  // (Node-API defers finalizers). Detach the stale wrapper so its destructor
+  // leaves the node alone, and let the caller create a fresh one.
+  wrapper->xml_obj = nullptr;
+  node->_private = nullptr;
+  return nullptr;
+}
+
+// static
 Napi::Value XmlNode::New(Napi::Env env, xmlNode *node) {
+  if (node == nullptr) {
+    return env.Null();
+  }
   switch (node->type) {
+  case XML_DOCUMENT_NODE:
+  case XML_HTML_DOCUMENT_NODE:
+    return XmlDocument::New(env, reinterpret_cast<xmlDoc *>(node));
+  case XML_NAMESPACE_DECL: {
+    // XPath returns namespace nodes as temporary copies whose `next` field
+    // points at the owning element. Return the declaration that is actually
+    // in scope there, which lives as long as the document.
+    xmlNs *copy = reinterpret_cast<xmlNs *>(node);
+    xmlNode *owner = reinterpret_cast<xmlNode *>(copy->next);
+    if (!has_element_fields(owner)) {
+      return env.Null();
+    }
+    xmlNs *ns = xmlSearchNs(owner->doc, owner, copy->prefix);
+    if (ns == nullptr) {
+      return env.Null();
+    }
+    return XmlNamespace::New(env, ns);
+  }
   case XML_ATTRIBUTE_NODE:
     return XmlAttribute::New(env, reinterpret_cast<xmlAttr *>(node));
   case XML_TEXT_NODE:
@@ -344,21 +386,31 @@ Napi::Value XmlNode::get_doc(Napi::Env env) {
   return XmlDocument::New(env, xml_obj->doc);
 }
 
+// Elements and attributes are the only nodes with an `ns` field.
+static bool has_ns_field(const xmlNode *node) {
+  return has_element_fields(node) || (node->type == XML_ATTRIBUTE_NODE);
+}
+
 Napi::Value XmlNode::remove_namespace(Napi::Env env) {
-  xml_obj->ns = nullptr;
+  if (has_ns_field(xml_obj)) {
+    xml_obj->ns = nullptr;
+  }
   return env.Null();
 }
 
 Napi::Value XmlNode::get_namespace(Napi::Env env) {
-  if (!xml_obj->ns) {
+  if (!has_ns_field(xml_obj) || !xml_obj->ns) {
     return env.Null();
   }
   return XmlNamespace::New(env, xml_obj->ns);
 }
 
-void XmlNode::set_namespace(xmlNs *ns) {
+bool XmlNode::set_namespace(xmlNs *ns) {
+  if (!has_ns_field(xml_obj)) {
+    return false;
+  }
   xmlSetNs(xml_obj, ns);
-  assert(xml_obj->ns);
+  return xml_obj->ns == ns;
 }
 
 xmlNs *XmlNode::find_namespace(const char *search_str) {
@@ -391,6 +443,9 @@ Napi::Value XmlNode::get_all_namespaces(Napi::Env env) {
 
 Napi::Value XmlNode::get_local_namespaces(Napi::Env env) {
   Napi::Array namespaces = Napi::Array::New(env);
+  if (!has_element_fields(xml_obj)) {
+    return namespaces;
+  }
   xmlNs *nsDef = xml_obj->nsDef;
   for (int i = 0; nsDef; i++, nsDef = nsDef->next) {
     namespaces.Set(i, XmlNamespace::New(env, nsDef));
@@ -405,7 +460,10 @@ Napi::Value XmlNode::get_parent(Napi::Env env) {
         static_cast<void *>(xml_obj->doc)) {
       return XmlDocument::New(env, xml_obj->doc);
     }
-    return XmlElement::New(env, xml_obj->parent);
+    return XmlNode::New(env, xml_obj->parent);
+  }
+  if (xml_obj->doc == nullptr) {
+    return env.Null();
   }
   return XmlDocument::New(env, xml_obj->doc);
 }
@@ -429,15 +487,31 @@ Napi::Value XmlNode::get_line_number(Napi::Env env) {
 }
 
 Napi::Value XmlNode::clone(Napi::Env env, bool recurse) {
+  if (!is_tree_node(xml_obj) && (xml_obj->type != XML_ATTRIBUTE_NODE)) {
+    Napi::Error::New(env, "This node type cannot be cloned")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
   xmlNode *new_xml_obj = xmlDocCopyNode(xml_obj, xml_obj->doc, recurse ? 1 : 0);
+  if (new_xml_obj == nullptr) {
+    Napi::Error::New(env, "Could not clone node").ThrowAsJavaScriptException();
+    return env.Null();
+  }
   return XmlNode::New(env, new_xml_obj);
 }
 
 Napi::Value XmlNode::to_string(Napi::Env env, int options) {
   xmlBuffer *buf = xmlBufferCreate();
+  if (buf == nullptr) {
+    return env.Null();
+  }
   const char *enc = "UTF-8";
 
   xmlSaveCtxt *savectx = xmlSaveToBuffer(buf, enc, options);
+  if (savectx == nullptr) {
+    xmlBufferFree(buf);
+    return env.Null();
+  }
   xmlSaveTree(savectx, xml_obj);
   xmlSaveFlush(savectx);
 
@@ -456,9 +530,16 @@ Napi::Value XmlNode::to_string(Napi::Env env, int options) {
   return env.Null();
 }
 
-void XmlNode::remove() {
+bool XmlNode::remove() {
+  // DTDs and declarations are owned by their document's hash tables, not
+  // by the tree; unlinking one would leave it to be freed with the wrong
+  // deallocator.
+  if (!is_tree_node(xml_obj) && (xml_obj->type != XML_ATTRIBUTE_NODE)) {
+    return false;
+  }
   this->unref_wrapped_ancestor();
   xmlUnlinkNode(xml_obj);
+  return true;
 }
 
 void XmlNode::add_child(xmlNode *child) {
@@ -474,6 +555,9 @@ void XmlNode::add_next_sibling(xmlNode *node) {
 }
 
 xmlNode *XmlNode::import_node(xmlNode *node) {
+  if (!is_tree_node(node) && (node->type != XML_ATTRIBUTE_NODE)) {
+    return nullptr;
+  }
   if (xml_obj->doc == node->doc) {
     if ((node->parent != nullptr) && (node->_private != nullptr)) {
       static_cast<XmlNode *>(node->_private)->remove();
@@ -588,7 +672,12 @@ Napi::Value XmlNode::Namespace_Method(const Napi::CallbackInfo& info) {
     ns = XmlNamespace::Unwrap(new_ns);
   }
 
-  set_namespace(ns->xml_obj);
+  if ((ns == nullptr) || (ns->xml_obj == nullptr) ||
+      !set_namespace(ns->xml_obj)) {
+    Napi::Error::New(env, "Cannot set a namespace on this node")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
   return Value_();
 }
 
@@ -682,7 +771,11 @@ Napi::Value XmlNode::ToString_Method(const Napi::CallbackInfo& info) {
 }
 
 Napi::Value XmlNode::Remove_Method(const Napi::CallbackInfo& info) {
-  remove();
+  if (!remove()) {
+    Napi::Error::New(info.Env(), "This node type cannot be removed")
+        .ThrowAsJavaScriptException();
+    return info.Env().Null();
+  }
   return Value_();
 }
 

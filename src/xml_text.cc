@@ -25,7 +25,8 @@ XmlText::XmlText(const Napi::CallbackInfo& info)
     return;
   }
 
-  if (!info[0].As<Napi::Object>().InstanceOf(XmlDocument::constructor.Value())) {
+  if (!info[0].IsObject() ||
+      !info[0].As<Napi::Object>().InstanceOf(XmlDocument::constructor.Value())) {
     Napi::Error::New(env, "document argument must be an instance of Document")
         .ThrowAsJavaScriptException();
     return;
@@ -64,8 +65,8 @@ XmlText::XmlText(const Napi::CallbackInfo& info)
 
 // static
 Napi::Object XmlText::New(Napi::Env env, xmlNode *node) {
-  if (node->_private) {
-    return static_cast<XmlNode *>(node->_private)->Value_();
+  if (XmlNode *existing = XmlNode::live_wrapper(node)) {
+    return existing->Value_();
   }
 
   Napi::Object obj = constructor.New({});
@@ -89,7 +90,10 @@ Napi::Value XmlText::Text(const Napi::CallbackInfo& info) {
     return get_content(env);
   }
 
-  std::string content = info[0].As<Napi::String>().Utf8Value();
+  std::string content;
+  if (!ToUtf8(env, info[0], content)) {
+    return env.Null();
+  }
   set_content(content.c_str());
   return Value_();
 }
@@ -97,8 +101,14 @@ Napi::Value XmlText::Text(const Napi::CallbackInfo& info) {
 Napi::Value XmlText::AddPrevSibling(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
 
-  XmlNode *new_sibling = XmlNode::Unwrap(env, info[0].As<Napi::Object>());
-  assert(new_sibling);
+  XmlNode *new_sibling = info[0].IsObject()
+                            ? XmlNode::Unwrap(env, info[0].As<Napi::Object>())
+                            : nullptr;
+  if ((new_sibling == nullptr) || (new_sibling->xml_obj == nullptr)) {
+    Napi::TypeError::New(env, "argument must be an XmlNode")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
 
   xmlNode *imported_sibling = this->import_node(new_sibling->xml_obj);
   if (imported_sibling == nullptr) {
@@ -117,8 +127,14 @@ Napi::Value XmlText::AddPrevSibling(const Napi::CallbackInfo& info) {
 Napi::Value XmlText::AddNextSibling(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
 
-  XmlNode *new_sibling = XmlNode::Unwrap(env, info[0].As<Napi::Object>());
-  assert(new_sibling);
+  XmlNode *new_sibling = info[0].IsObject()
+                            ? XmlNode::Unwrap(env, info[0].As<Napi::Object>())
+                            : nullptr;
+  if ((new_sibling == nullptr) || (new_sibling->xml_obj == nullptr)) {
+    Napi::TypeError::New(env, "argument must be an XmlNode")
+        .ThrowAsJavaScriptException();
+    return env.Null();
+  }
 
   xmlNode *imported_sibling = this->import_node(new_sibling->xml_obj);
   if (imported_sibling == nullptr) {
@@ -141,8 +157,14 @@ Napi::Value XmlText::Replace(const Napi::CallbackInfo& info) {
     std::string content = info[0].As<Napi::String>().Utf8Value();
     replace_text(content.c_str());
   } else {
-    XmlNode *new_node = XmlNode::Unwrap(env, info[0].As<Napi::Object>());
-    assert(new_node);
+    XmlNode *new_node = info[0].IsObject()
+                            ? XmlNode::Unwrap(env, info[0].As<Napi::Object>())
+                            : nullptr;
+    if ((new_node == nullptr) || (new_node->xml_obj == nullptr)) {
+      Napi::TypeError::New(env, "argument must be a string or XmlNode")
+          .ThrowAsJavaScriptException();
+      return env.Null();
+    }
 
     xmlNode *imported_sibling = this->import_node(new_node->xml_obj);
     if (imported_sibling == nullptr) {
