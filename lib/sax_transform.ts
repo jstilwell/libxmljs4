@@ -1,9 +1,32 @@
 import { Transform, TransformCallback, TransformOptions } from 'node:stream';
+import type { Readable } from 'node:stream';
 import { StringDecoder } from 'node:string_decoder';
 import { SaxPushParser } from './sax_parser';
+import type { SaxCallbacks, SaxParserEvents } from './types';
 
 export interface SaxTransformOptions extends TransformOptions {
-  callbacks?: Record<string, (...args: any[]) => void>;
+  /** Listeners to register on the underlying `SaxPushParser`. */
+  callbacks?: SaxCallbacks;
+}
+
+/**
+ * Events a `SaxTransform` emits, and the arguments their listeners receive:
+ * the SAX events, with the parser's `error` renamed `saxError`, plus the
+ * stream events.
+ */
+export interface SaxTransformEvents extends Omit<SaxParserEvents, 'error'> {
+  saxError: SaxParserEvents['error'];
+  close: [];
+  data: [chunk: any];
+  drain: [];
+  end: [];
+  error: [err: Error];
+  finish: [];
+  pause: [];
+  pipe: [src: Readable];
+  readable: [];
+  resume: [];
+  unpipe: [src: Readable];
 }
 
 /**
@@ -85,4 +108,40 @@ export class SaxTransform extends Transform {
     }
     callback();
   }
+}
+
+// Type-only: declaration merging gives the inherited EventEmitter methods
+// listener types for the events above. No runtime code is added.
+export interface SaxTransform {
+  on<E extends keyof SaxTransformEvents>(
+    event: E,
+    listener: (...args: SaxTransformEvents[E]) => void
+  ): this;
+  on(event: string | symbol, listener: (...args: any[]) => void): this;
+  once<E extends keyof SaxTransformEvents>(
+    event: E,
+    listener: (...args: SaxTransformEvents[E]) => void
+  ): this;
+  once(event: string | symbol, listener: (...args: any[]) => void): this;
+  addListener<E extends keyof SaxTransformEvents>(
+    event: E,
+    listener: (...args: SaxTransformEvents[E]) => void
+  ): this;
+  addListener(event: string | symbol, listener: (...args: any[]) => void): this;
+  prependListener<E extends keyof SaxTransformEvents>(
+    event: E,
+    listener: (...args: SaxTransformEvents[E]) => void
+  ): this;
+  prependListener(
+    event: string | symbol,
+    listener: (...args: any[]) => void
+  ): this;
+  prependOnceListener<E extends keyof SaxTransformEvents>(
+    event: E,
+    listener: (...args: SaxTransformEvents[E]) => void
+  ): this;
+  prependOnceListener(
+    event: string | symbol,
+    listener: (...args: any[]) => void
+  ): this;
 }
