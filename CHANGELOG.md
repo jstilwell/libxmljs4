@@ -5,6 +5,75 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+
+- **CVE-2024-34393 and CVE-2024-34394 are actually fixed.** The 2.0.0 notes
+  claimed the N-API rewrite fixed them, but DTD, entity, and declaration
+  nodes were still treated as elements. Element-only methods now check the
+  node type first: `attrs()` and `namespaces(true)` return `[]`, `attr()` and
+  `namespace()` return `null`, and methods that modify the node throw.
+- **libxml2 updated to 2.9.14 with distribution security backports.** The
+  vendored copy was an unpatched June 2021 snapshot (2.9.12 plus 12 commits)
+  whose headers said 2.9.9. It is now 2.9.14 plus Debian trixie's and
+  Ubuntu's backports, closing every reachable CVE found in the audit,
+  including CVE-2024-56171, CVE-2026-6653, CVE-2025-49794, CVE-2025-49796,
+  CVE-2022-40304, CVE-2026-86140, CVE-2025-24928, CVE-2022-23308,
+  CVE-2025-32415, CVE-2023-28484 and CVE-2023-29469. `vendor/libxml/PATCHES.md`
+  lists every patch. HTML parser output for malformed input is deliberately
+  kept as it was.
+- Fixed process crashes reachable from ordinary input or calls:
+  - `find('//namespace::*')`;
+  - XPath errors after `validate()` or `rngValidate()` failed on an invalid
+    schema, which left the global error handler pointing at freed memory;
+  - inserting a text node next to existing text with `addNextSibling()` or
+    `addPrevSibling()`;
+  - re-entrant SAX parsing;
+  - SAX parsing of an empty string.
+- Builds use `-fstack-protector-strong` and full RELRO on Linux, and Control
+  Flow Guard on Windows.
+
+### Fixed
+
+- Invalid arguments throw a `TypeError` instead of aborting the process, for
+  example `parseXml(null)`, `addChild(null)`, or a non-node passed to
+  `addNextSibling()`.
+- String arguments are converted with `String(value)` again, as in libxmljs2,
+  so `attr('n', 5)` and `attr({ n: 5 })` work. In 2.0.0 they aborted the
+  process.
+- `find()`, `get()`, and `childNodes()` no longer fail intermittently with
+  "Invalid argument" under garbage-collection pressure.
+- After a worker thread that loaded the addon exits, the main thread keeps
+  working. It used to crash on its next parse. Parsing on several threads at
+  the same time is still unsupported.
+- `attr(name)` returns `null`, instead of aborting, for an attribute that
+  only has a DTD default value.
+- `SaxTransform` decodes multi-byte UTF-8 characters split across chunks
+  correctly.
+- `parseHtmlFragment` no longer modifies the options object passed to it.
+- `null` options are treated like omitted options in all parse functions.
+- `SaxParser` and `SaxPushParser` instances are `instanceof EventEmitter`.
+- `examples/cdata.js` runs again.
+
+### Changed
+
+- `libxml_version` reports `2.9.14`.
+- Inputs whose entity expansion exceeds both 10 MB and 10 times the input
+  size are rejected, even with `huge`. Without `huge`, CDATA sections over
+  10,000,000 bytes and quoted literals or NMTOKENs over 50,000 characters are
+  rejected.
+
+### Internal
+
+- The memory-management and ref-integrity test suites run by default again,
+  and `test/security.test.js` covers each fixed crash.
+- CI pins every action to a commit SHA, gives the workflow token read-only
+  access by default, tests on Node 26, and loads each prebuild before
+  uploading it.
+- Removed a stale precompiled header, `vendor/libxml/config.h.gch`, from the
+  repository and the npm package.
+
 ## [2.0.0] - 2026-07-28
 
 ### Breaking

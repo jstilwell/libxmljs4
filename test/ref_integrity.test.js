@@ -82,8 +82,13 @@ describe('ref integrity', () => {
       "<?xml version='1.0' encoding='UTF-8'?><root></root>"
     );
     let el = new libxml.Element(doc, 'foo');
-     
-    let _ns = el.namespace('bar', null);
+
+    // A non-string href throws since 2.0.0, so give the namespace one.
+    // namespace(prefix, href) returns the element; namespace() returns the
+    // namespace itself, which is what must outlive the element here.
+    el.namespace('bar', 'urn:bar');
+    let _ns = el.namespace();
+    expect(_ns.prefix()).toBe('bar');
 
     el = null;
     global.gc();

@@ -74,7 +74,29 @@
                             "OTHER_LDFLAGS": ["-undefined dynamic_lookup"],
                         },
                     },
-                ]
+                ],
+                # Hardening. node-gyp's common.gypi sets neither of these.
+                # _FORTIFY_SOURCE is left to the toolchain: distro compilers
+                # already define it, some as 3, and redefining it warns.
+                [
+                    'OS=="linux"',
+                    {
+                        "cflags": ["-fstack-protector-strong"],
+                        "ldflags": ["-Wl,-z,relro,-z,now"],
+                    },
+                ],
+                # Control Flow Guard. common.gypi only adds /guard:cf when
+                # Node itself is built with control_flow_guard=true. /sdl is
+                # left out: it turns C4996 warnings in vendored C into errors.
+                [
+                    'OS=="win"',
+                    {
+                        "msvs_settings": {
+                            "VCCLCompilerTool": {"AdditionalOptions": ["/guard:cf"]},
+                            "VCLinkerTool": {"AdditionalOptions": ["/guard:cf"]},
+                        },
+                    },
+                ],
             ],
         }
     ]

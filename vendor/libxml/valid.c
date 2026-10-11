@@ -1052,6 +1052,7 @@ xmlCopyDocElementContent(xmlDocPtr doc, xmlElementContentPtr cur) {
 	    tmp->type = cur->type;
 	    tmp->ocur = cur->ocur;
 	    prev->c2 = tmp;
+	    tmp->parent = prev;
 	    if (cur->name != NULL) {
 		if (dict)
 		    tmp->name = xmlDictLookup(dict, cur->name, -1);
@@ -2278,7 +2279,7 @@ xmlDumpAttributeDecl(xmlBufferPtr buf, xmlAttributePtr attr) {
 	xmlBufferWriteChar(buf, ":");
     }
     xmlBufferWriteCHAR(buf, attr->name);
-    switch (attr->atype) {
+    switch (XML_ATTR_GET_ATYPE(attr)) {
 	case XML_ATTRIBUTE_CDATA:
 	    xmlBufferWriteChar(buf, " CDATA");
 	    break;
@@ -2608,6 +2609,53 @@ xmlDumpNotationTable(xmlBufferPtr buf, xmlNotationTablePtr table) {
 	    xmlFree((char *)(str));
 
 /**
+ * xmlValidNormalizeString:
+ * @str: a string
+ *
+ * Normalize a string in-place.
+ */
+static void
+xmlValidNormalizeString(xmlChar *str) {
+    xmlChar *dst;
+    const xmlChar *src;
+
+    if (str == NULL)
+        return;
+    src = str;
+    dst = str;
+
+    while (*src == 0x20) src++;
+    while (*src != 0) {
+	if (*src == 0x20) {
+	    while (*src == 0x20) src++;
+	    if (*src != 0)
+		*dst++ = 0x20;
+	} else {
+	    *dst++ = *src++;
+	}
+    }
+    *dst = 0;
+}
+
+static int
+xmlIsStreaming(xmlValidCtxtPtr ctxt) {
+    xmlParserCtxtPtr pctxt;
+
+    if (ctxt == NULL)
+        return(0);
+    /*
+     * These magic values are also abused to detect whether we're validating
+     * while parsing a document. In this case, userData points to the parser
+     * context.
+     */
+    if ((ctxt->finishDtd != XML_CTXT_FINISH_DTD_0) &&
+        (ctxt->finishDtd != XML_CTXT_FINISH_DTD_1))
+        return(0);
+    pctxt = ctxt->userData;
+    return(pctxt->parseMode == XML_PARSE_READER);
+}
+
+/**
  * xmlFreeID:
  * @not:  A id
  *
@@ -2650,7 +2698,7 @@ xmlAddID(xmlValidCtxtPtr ctxt, xmlDocPtr doc, const xmlChar *value,
     if (doc == NULL) {
 	return(NULL);
     }
-    if (value == NULL) {
+    if ((value == NULL) || (value[0] == 0)) {
 	return(NULL);
     }
     if (attr == NULL) {
@@ -2681,7 +2729,7 @@ xmlAddID(xmlValidCtxtPtr ctxt, xmlDocPtr doc, const xmlChar *value,
      */
     ret->value = xmlStrdup(value);
     ret->doc = doc;
-    if ((ctxt != NULL) && (ctxt->vstateNr != 0)) {
+    if (xmlIsStreaming(ctxt)) {
 	/*
 	 * Operating in streaming mode, attr is gonna disappear
 	 */
@@ -2710,7 +2758,7 @@ xmlAddID(xmlValidCtxtPtr ctxt, xmlDocPtr doc, const xmlChar *value,
 	return(NULL);
     }
     if (attr != NULL)
-	attr->atype = XML_ATTRIBUTE_ID;
+	XML_ATTR_SET_ATYPE(attr, XML_ATTRIBUTE_ID);
     return(ret);
 }
 
@@ -2820,6 +2868,7 @@ xmlRemoveID(xmlDocPtr doc, xmlAttrPtr attr) {
     ID = xmlNodeListGetString(doc, attr->children, 1);
     if (ID == NULL)
         return(-1);
+    xmlValidNormalizeString(ID);
 
     id = xmlHashLookup(table, ID);
     if (id == NULL || id->attr != attr) {
@@ -2829,7 +2878,7 @@ xmlRemoveID(xmlDocPtr doc, xmlAttrPtr attr) {
 
     xmlHashRemoveEntry(table, ID, xmlFreeIDTableEntry);
     xmlFree(ID);
-    attr->atype = 0;
+    XML_ATTR_CLEAR_ATYPE(attr);
     return(0);
 }
 
@@ -3009,7 +3058,7 @@ xmlAddRef(xmlValidCtxtPtr ctxt, xmlDocPtr doc, const xmlChar *value,
      * fill the structure.
      */
     ret->value = xmlStrdup(value);
-    if ((ctxt != NULL) && (ctxt->vstateNr != 0)) {
+    if (xmlIsStreaming(ctxt)) {
 	/*
 	 * Operating in streaming mode, attr is gonna disappear
 	 */
@@ -3483,7 +3532,7 @@ xmlIsMixedElement(xmlDocPtr doc, const xmlChar *name) {
 
 static int
 xmlIsDocNameStartChar(xmlDocPtr doc, int c) {
-    if ((doc == NULL) || (doc->properties & XML_DOC_OLD10) == 0) {
+    if ((doc == NULL) || (XML_DOC_GET_PROPERTIES(doc) & XML_DOC_OLD10) == 0) {
         /*
 	 * Use the new checks of production [4] [4a] amd [5] of the
 	 * Update 5 of XML-1.0
@@ -3513,7 +3562,7 @@ xmlIsDocNameStartChar(xmlDocPtr doc, int c) {
 
 static int
 xmlIsDocNameChar(xmlDocPtr doc, int c) {
-    if ((doc == NULL) || (doc->properties & XML_DOC_OLD10) == 0) {
+    if ((doc == NULL) || (XML_DOC_GET_PROPERTIES(doc) & XML_DOC_OLD10) == 0) {
         /*
 	 * Use the new checks of production [4] [4a] amd [5] of the
 	 * Update 5 of XML-1.0
@@ -4028,8 +4077,7 @@ xmlValidateAttributeValue2(xmlValidCtxtPtr ctxt, xmlDocPtr doc,
 xmlChar *
 xmlValidCtxtNormalizeAttributeValue(xmlValidCtxtPtr ctxt, xmlDocPtr doc,
 	     xmlNodePtr elem, const xmlChar *name, const xmlChar *value) {
-    xmlChar *ret, *dst;
-    const xmlChar *src;
+    xmlChar *ret;
     xmlAttributePtr attrDecl = NULL;
     int extsubset = 0;
 
@@ -4070,19 +4118,7 @@ xmlValidCtxtNormalizeAttributeValue(xmlValidCtxtPtr ctxt, xmlDocPtr doc,
     ret = xmlStrdup(value);
     if (ret == NULL)
 	return(NULL);
-    src = value;
-    dst = ret;
-    while (*src == 0x20) src++;
-    while (*src != 0) {
-	if (*src == 0x20) {
-	    while (*src == 0x20) src++;
-	    if (*src != 0)
-		*dst++ = 0x20;
-	} else {
-	    *dst++ = *src++;
-	}
-    }
-    *dst = 0;
+    xmlValidNormalizeString(ret);
     if ((doc->standalone) && (extsubset == 1) && (!xmlStrEqual(value, ret))) {
 	xmlErrValidNode(ctxt, elem, XML_DTD_NOT_STANDALONE,
 "standalone: %s on %s value had to be normalized based on external subset declaration\n",
@@ -4114,8 +4150,7 @@ xmlValidCtxtNormalizeAttributeValue(xmlValidCtxtPtr ctxt, xmlDocPtr doc,
 xmlChar *
 xmlValidNormalizeAttributeValue(xmlDocPtr doc, xmlNodePtr elem,
 			        const xmlChar *name, const xmlChar *value) {
-    xmlChar *ret, *dst;
-    const xmlChar *src;
+    xmlChar *ret;
     xmlAttributePtr attrDecl = NULL;
 
     if (doc == NULL) return(NULL);
@@ -4145,19 +4180,7 @@ xmlValidNormalizeAttributeValue(xmlDocPtr doc, xmlNodePtr elem,
     ret = xmlStrdup(value);
     if (ret == NULL)
 	return(NULL);
-    src = value;
-    dst = ret;
-    while (*src == 0x20) src++;
-    while (*src != 0) {
-	if (*src == 0x20) {
-	    while (*src == 0x20) src++;
-	    if (*src != 0)
-		*dst++ = 0x20;
-	} else {
-	    *dst++ = *src++;
-	}
-    }
-    *dst = 0;
+    xmlValidNormalizeString(ret);
     return(ret);
 }
 
@@ -4478,7 +4501,7 @@ xmlValidateOneAttribute(xmlValidCtxtPtr ctxt, xmlDocPtr doc,
 	       attr->name, elem->name, NULL);
 	return(0);
     }
-    attr->atype = attrDecl->atype;
+    XML_ATTR_SET_ATYPE(attr, attrDecl->atype);
 
     val = xmlValidateAttributeValueInternal(doc, attrDecl->atype, value);
     if (val == 0) {
@@ -5226,7 +5249,15 @@ xmlSnprintfElements(char *buf, int size, xmlNodePtr node, int glob) {
     int len;
 
     if (node == NULL) return;
-    if (glob) strcat(buf, "(");
+    len = strlen(buf);
+    if (glob) {
+        if (size - len < 50) {
+            if ((size - len > 4) && (buf[len - 1] != '.'))
+                strcat(buf, " ...");
+            return;
+        }
+        strcat(buf, "(");
+    }
     cur = node;
     while (cur != NULL) {
 	len = strlen(buf);
@@ -5236,25 +5267,26 @@ xmlSnprintfElements(char *buf, int size, xmlNodePtr node, int glob) {
 	    return;
 	}
         switch (cur->type) {
-            case XML_ELEMENT_NODE:
+            case XML_ELEMENT_NODE: {
+                int qnameLen = xmlStrlen(cur->name);
+
+                if ((cur->ns != NULL) && (cur->ns->prefix != NULL))
+                    qnameLen += xmlStrlen(cur->ns->prefix) + 1;
+                if (size - len < qnameLen + 10) {
+                    if ((size - len > 4) && (buf[len - 1] != '.'))
+                        strcat(buf, " ...");
+                    return;
+                }
 		if ((cur->ns != NULL) && (cur->ns->prefix != NULL)) {
-		    if (size - len < xmlStrlen(cur->ns->prefix) + 10) {
-			if ((size - len > 4) && (buf[len - 1] != '.'))
-			    strcat(buf, " ...");
-			return;
-		    }
 		    strcat(buf, (char *) cur->ns->prefix);
 		    strcat(buf, ":");
 		}
-                if (size - len < xmlStrlen(cur->name) + 10) {
-		    if ((size - len > 4) && (buf[len - 1] != '.'))
-			strcat(buf, " ...");
-		    return;
-		}
-	        strcat(buf, (char *) cur->name);
+                if (cur->name != NULL)
+	            strcat(buf, (char *) cur->name);
 		if (cur->next != NULL)
 		    strcat(buf, " ");
 		break;
+            }
             case XML_TEXT_NODE:
 		if (xmlIsBlankNode(cur))
 		    break;
@@ -5292,7 +5324,11 @@ xmlSnprintfElements(char *buf, int size, xmlNodePtr node, int glob) {
 	}
 	cur = cur->next;
     }
-    if (glob) strcat(buf, ")");
+    if (glob) {
+        len = strlen(buf);
+        if (size - len > 1)
+            strcat(buf, ")");
+    }
 }
 
 /**
@@ -6550,7 +6586,7 @@ xmlValidateRef(xmlRefPtr ref, xmlValidCtxtPtr ctxt,
 	    while (IS_BLANK_CH(*cur)) cur++;
 	}
 	xmlFree(dup);
-    } else if (attr->atype == XML_ATTRIBUTE_IDREF) {
+    } else if (XML_ATTR_GET_ATYPE(attr) == XML_ATTRIBUTE_IDREF) {
 	id = xmlGetID(ctxt->doc, name);
 	if (id == NULL) {
 	    xmlErrValidNode(ctxt, attr->parent, XML_DTD_UNKNOWN_ID,
@@ -6558,7 +6594,7 @@ xmlValidateRef(xmlRefPtr ref, xmlValidCtxtPtr ctxt,
 		   attr->name, name, NULL);
 	    ctxt->valid = 0;
 	}
-    } else if (attr->atype == XML_ATTRIBUTE_IDREFS) {
+    } else if (XML_ATTR_GET_ATYPE(attr) == XML_ATTRIBUTE_IDREFS) {
 	xmlChar *dup, *str = NULL, *cur, save;
 
 	dup = xmlStrdup(name);

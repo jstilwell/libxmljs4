@@ -6,9 +6,14 @@
 #include "xml_element.h"
 #include "xml_namespace.h"
 
+#include "libxmljs.h"
+
 namespace libxmljs {
 
-Napi::FunctionReference XmlAttribute::constructor;
+// Per-env so each worker thread gets its own constructor reference.
+Napi::FunctionReference &XmlAttribute::constructor(Napi::Env env) {
+  return GetInstanceData(env)->attribute;
+}
 
 XmlAttribute::XmlAttribute(const Napi::CallbackInfo& info)
     : Napi::ObjectWrap<XmlAttribute>(info), XmlNode(nullptr) {
@@ -21,22 +26,19 @@ XmlAttribute::XmlAttribute(const Napi::CallbackInfo& info)
 }
 
 // static
-Napi::Object XmlAttribute::New(Napi::Env env, xmlNode *xml_obj,
-                                const xmlChar *name, const xmlChar *value) {
-  xmlAttr *attr = xmlSetProp(xml_obj, name, value);
-  assert(attr);
-  return XmlAttribute::New(env, attr);
-}
-
-// static
-Napi::Object XmlAttribute::New(Napi::Env env, xmlAttr *attr) {
-  assert(attr->type == XML_ATTRIBUTE_NODE);
-
-  if (attr->_private) {
-    return static_cast<XmlNode *>(attr->_private)->Value_();
+Napi::Value XmlAttribute::New(Napi::Env env, xmlAttr *attr) {
+  // xmlHasProp can return a DTD attribute declaration (a different struct)
+  // for defaulted attributes; only real attribute nodes are wrapped.
+  if ((attr == nullptr) || (attr->type != XML_ATTRIBUTE_NODE)) {
+    return env.Null();
   }
 
-  Napi::Object obj = constructor.New({});
+  if (XmlNode *existing =
+          XmlNode::live_wrapper(reinterpret_cast<xmlNode *>(attr))) {
+    return existing->Value_();
+  }
+
+  Napi::Object obj = constructor(env).New({});
   XmlAttribute *wrapper = Napi::ObjectWrap<XmlAttribute>::Unwrap(obj);
   wrapper->xml_obj = reinterpret_cast<xmlNode *>(attr);
   attr->_private = static_cast<XmlNode *>(wrapper);
@@ -59,7 +61,10 @@ Napi::Value XmlAttribute::GetValue(const Napi::CallbackInfo& info) {
 
   // attr.value('new value')
   if (info.Length() > 0) {
-    std::string val = info[0].As<Napi::String>().Utf8Value();
+    std::string val;
+    if (!ToUtf8(env, info[0], val)) {
+      return env.Null();
+    }
     set_value(val.c_str());
     return Value_();
   }
@@ -131,7 +136,10 @@ void XmlAttribute::set_value(const char *value) {
 
 Napi::Value XmlAttribute::get_element(Napi::Env env) {
   xmlAttr *attr = reinterpret_cast<xmlAttr *>(xml_obj);
-  return XmlElement::New(env, attr->parent);
+  if (attr->parent == nullptr) {
+    return env.Null();
+  }
+  return XmlNode::New(env, attr->parent);
 }
 
 Napi::Value XmlAttribute::get_attr_namespace(Napi::Env env) {
@@ -163,8 +171,7 @@ void XmlAttribute::Init(Napi::Env env, Napi::Object exports) {
     InstanceMethod("node",  &XmlAttribute::Node),
   });
 
-  constructor = Napi::Persistent(func);
-  constructor.SuppressDestruct();
+  constructor(env) = Napi::Persistent(func);
   exports.Set("Attribute", func);
 }
 

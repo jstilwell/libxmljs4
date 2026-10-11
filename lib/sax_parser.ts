@@ -1,6 +1,18 @@
 import * as events from 'node:events';
 import bindings from './bindings';
 
+// Give a native prototype the EventEmitter methods. They are copied on as
+// own properties, as they always have been, and EventEmitter.prototype is
+// also put on the prototype chain so instances are `instanceof
+// EventEmitter`. The copies shadow the inherited methods, so calls resolve
+// exactly as before.
+function mixinEventEmitter(proto: any): void {
+  for (const k in events.EventEmitter.prototype) {
+    proto[k] = (events.EventEmitter.prototype as any)[k];
+  }
+  Object.setPrototypeOf(proto, events.EventEmitter.prototype);
+}
+
 export function SaxParser(callbacks?: Record<string, (...args: any[]) => void>) {
   const parser = new bindings.SaxParser();
 
@@ -13,12 +25,7 @@ export function SaxParser(callbacks?: Record<string, (...args: any[]) => void>) 
   return parser;
 }
 
-// Copy EventEmitter methods onto the native prototype
-for (const k in events.EventEmitter.prototype) {
-  (bindings.SaxParser.prototype as any)[k] = (
-    events.EventEmitter.prototype as any
-  )[k];
-}
+mixinEventEmitter(bindings.SaxParser.prototype);
 
 export function SaxPushParser(
   callbacks?: Record<string, (...args: any[]) => void>
@@ -34,9 +41,4 @@ export function SaxPushParser(
   return parser;
 }
 
-// Copy EventEmitter methods onto the native prototype
-for (const k in events.EventEmitter.prototype) {
-  (bindings.SaxPushParser.prototype as any)[k] = (
-    events.EventEmitter.prototype as any
-  )[k];
-}
+mixinEventEmitter(bindings.SaxPushParser.prototype);

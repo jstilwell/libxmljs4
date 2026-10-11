@@ -1446,8 +1446,11 @@ xmlNewEntityInputStream(xmlParserCtxtPtr ctxt, xmlEntityPtr entity) {
                 break;
             case XML_EXTERNAL_GENERAL_PARSED_ENTITY:
             case XML_EXTERNAL_PARAMETER_ENTITY:
-		return(xmlLoadExternalEntity((char *) entity->URI,
-		       (char *) entity->ExternalID, ctxt));
+		input = xmlLoadExternalEntity((char *) entity->URI,
+		       (char *) entity->ExternalID, ctxt);
+                if (input != NULL)
+                    input->entity = entity;
+                return(input);
             case XML_INTERNAL_GENERAL_ENTITY:
 	        xmlErrInternal(ctxt,
 		      "Internal entity %s without content !\n",
@@ -1478,6 +1481,7 @@ xmlNewEntityInputStream(xmlParserCtxtPtr ctxt, xmlEntityPtr entity) {
     input->cur = entity->content;
     input->length = entity->length;
     input->end = &entity->content[input->length];
+    input->entity = entity;
     return(input);
 }
 
@@ -1546,8 +1550,10 @@ xmlNewInputFromFile(xmlParserCtxtPtr ctxt, const char *filename) {
     }
 
     inputStream = xmlNewInputStream(ctxt);
-    if (inputStream == NULL)
+    if (inputStream == NULL) {
+	xmlFreeParserInputBuffer(buf);
 	return(NULL);
+    }
 
     inputStream->buf = buf;
     inputStream = xmlCheckHTTPInput(ctxt, inputStream);

@@ -10,7 +10,7 @@ namespace libxmljs {
 
 class XmlDocument : public Napi::ObjectWrap<XmlDocument> {
 public:
-  static Napi::FunctionReference constructor;
+  static Napi::FunctionReference &constructor(Napi::Env env);
 
   // TODO make private with accessor
   xmlDoc *xml_obj;

@@ -525,8 +525,6 @@ xmlXIncludeAddNode(xmlXIncludeCtxtPtr ctxt, xmlNodePtr cur) {
 	if (href == NULL)
 	    return(-1);
     }
-    if ((href[0] == '#') || (href[0] == 0))
-	local = 1;
     parse = xmlXIncludeGetProp(ctxt, cur, XINCLUDE_PARSE);
     if (parse != NULL) {
 	if (xmlStrEqual(parse, XINCLUDE_PARSE_XML))
@@ -614,14 +612,18 @@ xmlXIncludeAddNode(xmlXIncludeCtxtPtr ctxt, xmlNodePtr cur) {
     }
     URL = xmlSaveUri(uri);
     xmlFreeURI(uri);
-    xmlFree(URI);
     if (URL == NULL) {
 	xmlXIncludeErr(ctxt, cur, XML_XINCLUDE_HREF_URI,
 	               "invalid value URI %s\n", URI);
 	if (fragment != NULL)
 	    xmlFree(fragment);
+    xmlFree(URI);
 	return(-1);
     }
+    xmlFree(URI);
+
+    if (xmlStrEqual(URL, ctxt->doc->URL))
+	local = 1;
 
     /*
      * If local and xml then we need a fragment
@@ -1014,15 +1016,15 @@ xmlXIncludeCopyRange(xmlXIncludeCtxtPtr ctxt, xmlDocPtr target,
 		if (list == NULL) {
 		    list = tmp;
 		    listParent = cur->parent;
+		    last = tmp;
 		} else {
 		    if (level == lastLevel)
-			xmlAddNextSibling(last, tmp);
+			last = xmlAddNextSibling(last, tmp);
 		    else {
-			xmlAddChild(last, tmp);
+			last = xmlAddChild(last, tmp);
 			lastLevel = level;
 		    }
 		}
-		last = tmp;
 
 		if (index2 > 1) {
 		    end = xmlXIncludeGetNthChild(cur, index2 - 1);
@@ -1103,12 +1105,11 @@ xmlXIncludeCopyRange(xmlXIncludeCtxtPtr ctxt, xmlDocPtr target,
 	    }
 	    if (tmp != NULL) {
 		if (level == lastLevel)
-		    xmlAddNextSibling(last, tmp);
+		    last = xmlAddNextSibling(last, tmp);
 		else {
-		    xmlAddChild(last, tmp);
+		    last = xmlAddChild(last, tmp);
 		    lastLevel = level;
 		}
-		last = tmp;
 	    }
 	}
 	/*
@@ -1186,8 +1187,7 @@ xmlXIncludeCopyXPointer(xmlXIncludeCtxtPtr ctxt, xmlDocPtr target,
 				    if (last == NULL) {
 					list = last = tmp;
 				    } else {
-					xmlAddNextSibling(last, tmp);
-					last = tmp;
+					last = xmlAddNextSibling(last, tmp);
 				    }
 				    cur = cur->next;
 				    continue;
@@ -1883,6 +1883,7 @@ xmlXIncludeLoadTxt(xmlXIncludeCtxtPtr ctxt, const xmlChar *url, int nr) {
      * Load it.
      */
     pctxt = xmlNewParserCtxt();
+    xmlCtxtUseOptions(pctxt, ctxt->parseFlags);
     inputStream = xmlLoadExternalEntity((const char*)URL, NULL, pctxt);
     if(inputStream == NULL) {
 	xmlFreeParserCtxt(pctxt);
@@ -2579,7 +2580,7 @@ xmlXIncludeProcessFlags(xmlDocPtr doc, int flags) {
  */
 int
 xmlXIncludeProcess(xmlDocPtr doc) {
-    return(xmlXIncludeProcessFlags(doc, 0));
+    return(xmlXIncludeProcessFlags(doc, doc ? doc->parseFlags : 0));
 }
 
 /**
@@ -2624,7 +2625,7 @@ xmlXIncludeProcessTreeFlags(xmlNodePtr tree, int flags) {
  */
 int
 xmlXIncludeProcessTree(xmlNodePtr tree) {
-    return(xmlXIncludeProcessTreeFlags(tree, 0));
+    return(xmlXIncludeProcessTreeFlags(tree, (tree && tree->doc) ? tree->doc->parseFlags : 0));
 }
 
 /**

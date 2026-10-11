@@ -1,4 +1,5 @@
 import { Transform, TransformCallback, TransformOptions } from 'node:stream';
+import { StringDecoder } from 'node:string_decoder';
 import { SaxPushParser } from './sax_parser';
 
 export interface SaxTransformOptions extends TransformOptions {
@@ -14,6 +15,10 @@ export interface SaxTransformOptions extends TransformOptions {
  */
 export class SaxTransform extends Transform {
   private _parser: any;
+  // A Buffer chunk can end partway through a multi-byte UTF-8 sequence.
+  // The decoder holds those bytes until the rest of the sequence arrives
+  // in a later chunk, instead of turning each half into U+FFFD.
+  #decoder = new StringDecoder('utf-8');
 
   constructor(opts?: SaxTransformOptions) {
     super({ ...opts, readableObjectMode: true });
@@ -48,7 +53,17 @@ export class SaxTransform extends Transform {
     callback: TransformCallback
   ): void {
     try {
-      const str = typeof chunk === 'string' ? chunk : chunk.toString('utf-8');
+      let str: string;
+      if (typeof chunk === 'string') {
+        // Only reachable with decodeStrings: false. Emit any bytes still
+        // held from an earlier Buffer chunk first, to keep input order.
+        str = this.#decoder.end() + chunk;
+      } else if (Buffer.isBuffer(chunk)) {
+        str = this.#decoder.write(chunk);
+      } else {
+        // Only reachable in writable object mode; unchanged behavior.
+        str = (chunk as any).toString('utf-8');
+      }
       this._parser.push(str, false);
       callback();
     } catch (err) {
@@ -58,7 +73,9 @@ export class SaxTransform extends Transform {
 
   _flush(callback: TransformCallback): void {
     try {
-      this._parser.push('', true);
+      // Push any bytes the decoder still holds. They can only be an
+      // incomplete sequence at end of input, which end() returns as U+FFFD.
+      this._parser.push(this.#decoder.end(), true);
     } catch {
       // Ignore errors from signaling end-of-document — the document
       // may already be complete from a prior chunk.

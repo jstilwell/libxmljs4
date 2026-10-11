@@ -1,6 +1,6 @@
 var libxml = require('../');
 
-var doc = libxml.Document();
+var doc = new libxml.Document();
 var elem = doc.node('name1');
 var firstChild = libxml.Element(doc, 'new-child');
 elem.addChild(firstChild);

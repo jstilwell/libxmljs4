@@ -6,9 +6,14 @@
 #include "xml_namespace.h"
 #include "xml_node.h"
 
+#include "libxmljs.h"
+
 namespace libxmljs {
 
-Napi::FunctionReference XmlNamespace::constructor;
+// Per-env so each worker thread gets its own constructor reference.
+Napi::FunctionReference &XmlNamespace::constructor(Napi::Env env) {
+  return GetInstanceData(env)->ns;
+}
 
 // JS constructor: new Namespace(node, prefix, href)
 // Also invoked with zero arguments from the C++ factory path (XmlNamespace::New)
@@ -33,7 +38,7 @@ XmlNamespace::XmlNamespace(const Napi::CallbackInfo& info)
   // without requiring knowledge of the concrete subclass type.
   Napi::Object node_obj = info[0].As<Napi::Object>();
   XmlNode *node = XmlNode::Unwrap(env, node_obj);
-  if (!node) {
+  if (!node || !node->xml_obj || !has_element_fields(node->xml_obj)) {
     Napi::Error::New(env, "You must provide a valid node object")
         .ThrowAsJavaScriptException();
     return;
@@ -65,6 +70,12 @@ XmlNamespace::XmlNamespace(const Napi::CallbackInfo& info)
                        prefix_str
                            ? reinterpret_cast<const xmlChar *>(prefix_str)
                            : nullptr);
+  if (ns == nullptr) {
+    Napi::Error::New(env, "Could not create namespace (is the prefix already "
+                          "declared on this node?)")
+        .ThrowAsJavaScriptException();
+    return;
+  }
 
   initFromNative(ns);
 }
@@ -72,7 +83,7 @@ XmlNamespace::XmlNamespace(const Napi::CallbackInfo& info)
 XmlNamespace::~XmlNamespace() {
   // xml_obj may have been nulled by xmlDeregisterNodeCallback when the xmlNs
   // was freed along with its attached node or document.
-  if (xml_obj != nullptr) {
+  if ((xml_obj != nullptr) && (xml_obj->_private == this)) {
     xml_obj->_private = nullptr;
   }
 
@@ -107,13 +118,19 @@ void XmlNamespace::initFromNative(xmlNs *ns) {
 // static
 Napi::Object XmlNamespace::New(Napi::Env env, xmlNs *ns) {
   if (ns->_private) {
-    // Already has a JS wrapper — return it directly.
-    return static_cast<XmlNamespace *>(ns->_private)->Value();
+    XmlNamespace *existing = static_cast<XmlNamespace *>(ns->_private);
+    // Reuse the wrapper only while its JS object is alive. A collected but
+    // not yet finalized wrapper is detached so it leaves `ns` alone.
+    if (!existing->Value().IsEmpty()) {
+      return existing->Value();
+    }
+    existing->xml_obj = nullptr;
+    ns->_private = nullptr;
   }
 
   // Create a new JS wrapper via the zero-argument constructor, then attach
   // the native pointer.
-  Napi::Object obj = constructor.New({});
+  Napi::Object obj = constructor(env).New({});
   XmlNamespace *wrapper = XmlNamespace::Unwrap(obj);
   wrapper->initFromNative(ns);
   return obj;
@@ -128,7 +145,7 @@ Napi::Value XmlNamespace::Prefix(const Napi::CallbackInfo& info) {
 }
 
 Napi::Value XmlNamespace::get_href(Napi::Env env) {
-  if (xml_obj->href) {
+  if (xml_obj && xml_obj->href) {
     return Napi::String::New(env,
         reinterpret_cast<const char *>(xml_obj->href),
         xmlStrlen(xml_obj->href));
@@ -137,7 +154,7 @@ Napi::Value XmlNamespace::get_href(Napi::Env env) {
 }
 
 Napi::Value XmlNamespace::get_prefix(Napi::Env env) {
-  if (xml_obj->prefix) {
+  if (xml_obj && xml_obj->prefix) {
     return Napi::String::New(env,
         reinterpret_cast<const char *>(xml_obj->prefix),
         xmlStrlen(xml_obj->prefix));
@@ -152,8 +169,7 @@ void XmlNamespace::Init(Napi::Env env, Napi::Object exports) {
     InstanceMethod("prefix", &XmlNamespace::Prefix),
   });
 
-  constructor = Napi::Persistent(func);
-  constructor.SuppressDestruct();
+  constructor(env) = Napi::Persistent(func);
 
   exports.Set("Namespace", func);
 }

@@ -26,10 +26,12 @@ const int nan_adjust_external_memory_threshold = 1024 * 1024;
 // track how many nodes haven't been freed
 int nodeCount = 0;
 
-// Global napi_env stored during module Init so that memory wrappers
-// (called from libxml2's allocator hooks) can report memory changes.
-// Set to nullptr during module cleanup to guard against post-shutdown calls.
-static napi_env global_env = nullptr;
+// The napi_env of the thread currently running, stored during module Init so
+// that memory wrappers (called from libxml2's allocator hooks) can report
+// memory changes. Thread-local because the main thread and each worker
+// thread have their own env, and napi_adjust_external_memory must only be
+// called on the env's own thread. Cleared by the env's cleanup hook.
+static thread_local napi_env global_env = nullptr;
 
 void adjustExternalMemory() {
   const int diff = xmlMemUsed() - xml_memory_used;
@@ -233,7 +235,19 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
 
   // Register a cleanup hook so that global_env is nulled out before the
   // env is torn down, preventing post-shutdown calls to napi_adjust_external_memory.
-  napi_add_env_cleanup_hook(env, [](void *) { global_env = nullptr; }, nullptr);
+  // The hook runs on the env's own thread, so it only clears that thread's
+  // value.
+  napi_add_env_cleanup_hook(
+      env,
+      [](void *arg) {
+        if (global_env == static_cast<napi_env>(arg)) {
+          global_env = nullptr;
+        }
+      },
+      static_cast<napi_env>(env));
+
+  // Per-env storage for class constructors; freed when the env is torn down.
+  env.SetInstanceData<InstanceData>(new InstanceData());
 
   XmlDocument::Init(env, exports);
   XmlSaxParser::Initialize(env, exports);
