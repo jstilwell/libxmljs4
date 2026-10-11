@@ -24,7 +24,7 @@ jobs:
             ubuntu-22.04,
             ubuntu-22.04-arm,
           ]
-        node: [22, 24]
+        node: [22, 24, 26]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -33,6 +33,9 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: ${{ matrix.node }}
+      # Node 25 and later no longer bundle corepack.
+      - if: matrix.node >= 26
+        run: npm install -g corepack@0.36.0
       - run: corepack enable
       - run: pnpm i --frozen-lockfile
         env:
