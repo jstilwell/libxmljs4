@@ -137,23 +137,10 @@ jobs:
       # assets flattens them into a single name and they overwrite each other.
       # Ship one tarball that preserves the directory structure instead; it is
       # what `pnpm publish` needs to unpack into prebuilds/ before publishing.
+      # The platform list lives in bin/check-prebuilds.sh, which the publish
+      # job below and bin/deploy.sh also run.
       - name: Check every expected platform is present
-        run: |
-          set -euo pipefail
-          missing=0
-          for p in darwin-arm64 linux-x64 linux-arm64 win32-x64 win32-arm64; do
-            if [ -z "$(find "prebuilds/$p" -name '*.node' -print -quit 2>/dev/null)" ]; then
-              echo "MISSING: prebuilds/$p"
-              missing=1
-            fi
-          done
-          # Alpine builds into linux-x64 alongside the glibc build, so assert
-          # the musl-tagged file specifically rather than just the directory.
-          if [ -z "$(find prebuilds -name '*.musl.node' -print -quit)" ]; then
-            echo "MISSING: any musl-tagged prebuild"
-            missing=1
-          fi
-          exit $missing
+        run: bash bin/check-prebuilds.sh prebuilds
       - name: Package prebuilds
         env:
           TAG: ${{ github.ref_name }}
@@ -163,3 +150,53 @@ jobs:
           files: libxmljs4-prebuilds-*.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  # Publish to npm with the same prebuilds the deploy job attached to the
+  # GitHub Release, so the tarball carries every platform rather than only
+  # the one it was packed on. Authenticates with npm trusted publishing
+  # (OIDC); there is no NPM_TOKEN secret. Skipped until the maintainer sets
+  # the NPM_TRUSTED_PUBLISHING repository variable to 'true'.
+  publish:
+    runs-on: ubuntu-latest
+    needs: [deploy]
+    if: startsWith(github.ref, 'refs/tags/v') && vars.NPM_TRUSTED_PUBLISHING == 'true'
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: prebuilds
+          pattern: "*-prebuild"
+          merge-multiple: true
+      - run: find prebuilds -type f
+      - name: Check every expected platform is present
+        run: bash bin/check-prebuilds.sh prebuilds
+      - name: Check package.json version matches the tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          if [ "$version" != "${TAG#v}" ]; then
+            echo "package.json version $version does not match tag $TAG"
+            exit 1
+          fi
+      # Trusted publishing needs npm 11.5.1 or later. Pin the version rather
+      # than taking whatever ships with the runner's Node.
+      - run: npm install -g npm@11.20.0
+      - run: npm --version
+      - run: corepack enable
+      # Only the TypeScript compiler is needed here. --ignore-scripts keeps
+      # dependency lifecycle scripts out of a job that can mint an npm
+      # publish token, and skips the native build, which prebuilds replace.
+      - run: pnpm i --frozen-lockfile --ignore-scripts
+      - run: pnpm build:ts
+      - run: npm publish --provenance --access public
