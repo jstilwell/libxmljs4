@@ -32,9 +32,9 @@ export interface ParserOptions {
    */
   dtdload?: boolean;
   /**
-   * For HTML, `false` stops libxml2 adding a default doctype. The HTML and
-   * XML flags share a bit, so in `parseXml` `false` loads the external DTD
-   * like `dtdload`.
+   * HTML only: `false` stops libxml2 adding a default doctype. `parseXml`
+   * ignores it. (Before 2.1.0 it shared a flag bit with `dtdload` there and
+   * loaded the external DTD.)
    */
   doctype?: boolean;
   /** Apply default attributes from the DTD (loads the external DTD). */
@@ -73,9 +73,8 @@ export interface ParserOptions {
    */
   nsclean?: boolean;
   /**
-   * For HTML, `false` stops libxml2 adding implied `html`/`body` elements.
-   * The HTML and XML flags share a bit, so in `parseXml` `false` acts as
-   * `nsclean`.
+   * HTML only: `false` stops libxml2 adding implied `html`/`body` elements.
+   * `parseXml` ignores it. (Before 2.1.0 it acted as `nsclean` there.)
    */
   implied?: boolean;
   /** Merge CDATA sections into text nodes. */

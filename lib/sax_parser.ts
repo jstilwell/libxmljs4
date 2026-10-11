@@ -33,6 +33,9 @@ function SaxParser(callbacks?: SaxCallbacks) {
 }
 
 mixinEventEmitter(bindings.SaxParser.prototype);
+// The factory returns a native parser, so share its prototype to make
+// `parser instanceof SaxParser` true.
+SaxParser.prototype = bindings.SaxParser.prototype;
 
 function SaxPushParser(callbacks?: SaxCallbacks) {
   const parser = new bindings.SaxPushParser();
@@ -47,6 +50,9 @@ function SaxPushParser(callbacks?: SaxCallbacks) {
 }
 
 mixinEventEmitter(bindings.SaxPushParser.prototype);
+// The factory returns a native parser, so share its prototype to make
+// `parser instanceof SaxPushParser` true.
+SaxPushParser.prototype = bindings.SaxPushParser.prototype;
 
 // Both functions return the native parser, so they work with or without
 // `new`. Export them with that public type.
