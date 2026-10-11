@@ -82,15 +82,25 @@ Both `parseXml` and `parseHtml` accept an options object:
 ```javascript
 const doc = libxmljs.parseXml(xml, {
   recover: true, // Recover from malformed XML
-  noent: true, // Substitute entities
   noblanks: true, // Remove blank text nodes
-  nonet: true, // Disable network access (default-like behavior)
-  huge: true, // Allow parsing very large documents
+  nonet: true, // Forbid network access (off by default; see below)
   baseUrl: 'http://example.com', // Base URL for relative references
 });
 ```
 
-Other options: `dtdload`, `dtdattr`, `dtdvalid`, `noerror`, `nowarning`, `pedantic`, `sax1`, `xinclude`, `nodict`, `nsclean`, `nocdata`, `compact`, `old`, `nobasefix`, `big_lines`, `ignore_enc`.
+Other options: `noent`, `dtdload`, `dtdattr`, `dtdvalid`, `xinclude`, `huge`, `noerror`, `nowarning`, `pedantic`, `sax1`, `nodict`, `nsclean`, `nocdata`, `compact`, `old`, `nobasefix`, `big_lines`, `ignore_enc`.
+
+Read [Security considerations](#security-considerations) before enabling `noent`, `dtdload`, `dtdattr`, `dtdvalid`, `xinclude`, or `huge`.
+
+### Security considerations
+
+When parsing untrusted input:
+
+- **The default options do not resolve external entities.** With no options set, `parseXml` neither loads an external DTD nor substitutes external entities. Neither do `SaxParser` and `SaxPushParser`.
+- **Do not enable `noent`, `dtdload`, `dtdattr`, `dtdvalid`, or `xinclude`.** Each one makes the parser read local files that the document names, which is how XML external entity (XXE) attacks work. `noent` substitutes external entities into the document, `dtdload`, `dtdattr`, and `dtdvalid` load the external DTD, and `xinclude` inlines `xi:include` targets.
+- **Network access is compiled out.** This build has no HTTP or FTP support (`libxmljs.features.HTTP` and `libxmljs.features.FTP` are `false`), so the parser never fetches remote URLs, with or without `nonet`. It can still read local files.
+- **Do not enable `huge`.** It removes libxml2's limits on entity expansion, text node size, and nesting depth. Those limits are what reject "billion laughs" documents.
+- **Only use trusted schemas.** XSD, RelaxNG, and Schematron documents passed to `validate()`, `rngValidate()`, and `schematronValidate()` can include or import other files, which libxml2 loads.
 
 ### XPath Queries
 
@@ -137,6 +147,12 @@ parser.on('endElementNS', (name, prefix, uri) => {
 
 parser.on('characters', (text) => {
   console.log('text:', text);
+});
+
+// Malformed input is reported as 'error' events. As with any EventEmitter,
+// parseString() throws "Unhandled error" if there is no listener.
+parser.on('error', (message) => {
+  console.error('parse error:', message.trim());
 });
 
 parser.parseString('<root><child>hello</child></root>');
