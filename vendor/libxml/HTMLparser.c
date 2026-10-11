@@ -2514,7 +2514,7 @@ htmlNewDocNoDtD(const xmlChar *URI, const xmlChar *ExternalID) {
     cur->refs = NULL;
     cur->_private = NULL;
     cur->charset = XML_CHAR_ENCODING_UTF8;
-    cur->properties = XML_DOC_HTML | XML_DOC_USERBUILT;
+    XML_DOC_SET_PROPERTIES(cur, XML_DOC_HTML | XML_DOC_USERBUILT);
     if ((ExternalID != NULL) ||
 	(URI != NULL))
 	xmlCreateIntSubset(cur, BAD_CAST "html", ExternalID, URI);
@@ -6744,6 +6744,8 @@ htmlCtxtReset(htmlParserCtxtPtr ctxt)
 
     ctxt->nameNr = 0;
     ctxt->name = NULL;
+
+    ctxt->nsNr = 0;
 
     DICT_FREE(ctxt->version);
     ctxt->version = NULL;

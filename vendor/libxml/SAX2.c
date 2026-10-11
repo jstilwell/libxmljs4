@@ -414,6 +414,9 @@ xmlSAX2ExternalSubset(void *ctx, const xmlChar *name,
 	int oldcharset;
 	const xmlChar *oldencoding;
 
+	unsigned long consumed;
+	size_t buffered;
+
 	/*
 	 * Ask the Entity resolver to load the damn thing
 	 */
@@ -481,6 +484,18 @@ xmlSAX2ExternalSubset(void *ctx, const xmlChar *name,
 
 	while (ctxt->inputNr > 1)
 	    xmlPopInput(ctxt);
+
+	consumed = ctxt->input->consumed;
+	buffered = ctxt->input->cur - ctxt->input->base;
+	if (buffered > ULONG_MAX - consumed)
+		consumed = ULONG_MAX;
+	else
+		consumed += buffered;
+	if (consumed > ULONG_MAX - ctxt->sizeentities)
+		ctxt->sizeentities = ULONG_MAX;
+	else
+		ctxt->sizeentities += consumed;
+
 	xmlFreeInputStream(ctxt->input);
         xmlFree(ctxt->inputTab);
 
@@ -970,7 +985,7 @@ xmlSAX2StartDocument(void *ctx)
 	    xmlSAX2ErrMemory(ctxt, "xmlSAX2StartDocument");
 	    return;
 	}
-	ctxt->myDoc->properties = XML_DOC_HTML;
+	XML_DOC_SET_PROPERTIES(ctxt->myDoc, XML_DOC_HTML);
 	ctxt->myDoc->parseFlags = ctxt->options;
 #else
         xmlGenericError(xmlGenericErrorContext,
@@ -983,9 +998,9 @@ xmlSAX2StartDocument(void *ctx)
     } else {
 	doc = ctxt->myDoc = xmlNewDoc(ctxt->version);
 	if (doc != NULL) {
-	    doc->properties = 0;
+	    XML_DOC_CLEAR_PROPERTIES(doc);
 	    if (ctxt->options & XML_PARSE_OLD10)
-	        doc->properties |= XML_DOC_OLD10;
+	        XML_DOC_ADD_PROPERTIES(doc, XML_DOC_OLD10);
 	    doc->parseFlags = ctxt->options;
 	    if (ctxt->encoding != NULL)
 		doc->encoding = xmlStrdup(ctxt->encoding);
@@ -2842,20 +2857,23 @@ xmlSAXVersion(xmlSAXHandler *hdlr, int version)
 {
     if (hdlr == NULL) return(-1);
     if (version == 2) {
-	hdlr->startElement = NULL;
-	hdlr->endElement = NULL;
 	hdlr->startElementNs = xmlSAX2StartElementNs;
 	hdlr->endElementNs = xmlSAX2EndElementNs;
 	hdlr->serror = NULL;
 	hdlr->initialized = XML_SAX2_MAGIC;
 #ifdef LIBXML_SAX1_ENABLED
     } else if (version == 1) {
-	hdlr->startElement = xmlSAX2StartElement;
-	hdlr->endElement = xmlSAX2EndElement;
 	hdlr->initialized = 1;
 #endif /* LIBXML_SAX1_ENABLED */
     } else
         return(-1);
+#ifdef LIBXML_SAX1_ENABLED
+    hdlr->startElement = xmlSAX2StartElement;
+    hdlr->endElement = xmlSAX2EndElement;
+#else
+    hdlr->startElement = NULL;
+    hdlr->endElement = NULL;
+#endif /* LIBXML_SAX1_ENABLED */
     hdlr->internalSubset = xmlSAX2InternalSubset;
     hdlr->externalSubset = xmlSAX2ExternalSubset;
     hdlr->isStandalone = xmlSAX2IsStandalone;
