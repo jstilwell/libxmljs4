@@ -5,6 +5,58 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **TypeScript types for the whole public API**, identical for `require` and
+  `import`: instance types for `Document`, `Element`, `Node`, `Attribute`,
+  `Text`, `Comment`, `ProcessingInstruction`, `Namespace`, the SAX parsers,
+  `SaxTransform` and `TextWriter`. Before, the parse functions were typed as
+  returning the `Document` constructor, and every ESM export was `any`.
+  `index.test-d.ts` now asserts the types, and the README code samples are
+  type-checked in the test suite. **Stricter types can surface new errors in
+  TypeScript projects**: for example, `parseXml(x).root()` is
+  `Element | null`, and `find()` can return `null`.
+- **`maxErrors` option** for parsing, and as an optional second argument to
+  `validate()`, `rngValidate()` and `schematronValidate()`. It sets how many
+  entries `doc.errors` or `doc.validationErrors` collect. The default is
+  `10000`; pass `Infinity` for no limit.
+- **Optional npm publishing from CI**, with provenance through npm trusted
+  publishing. It is off until the repository variable
+  `NPM_TRUSTED_PUBLISHING` is `true`.
+
+### Changed
+
+- **`doc.errors` and `doc.validationErrors` hold at most 10,000 entries by
+  default.** Every libxml2 diagnostic used to become a JS `Error`, so a small
+  malformed input could use hundreds of megabytes.
+- **`parseXml` ignores the HTML-only `doctype` and `implied` options.** They
+  share flag bits with XML options, so `parseXml(xml, { doctype: false })`
+  loaded the external DTD and `implied: false` acted as `nsclean`.
+- **`SaxTransform` fails the stream when a listener throws during the final
+  push**, as it already did for earlier chunks. Before, the exception was
+  swallowed.
+- **The documented `old` parser option now works**, as an alias for `old10`.
+  It was silently ignored.
+
+### Fixed
+
+- `parseXml` and `parseHtml` read a `DataView` source as bytes instead of
+  aborting the process, and accept any typed array.
+- `new SaxParser() instanceof SaxParser` (and the same for `SaxPushParser`)
+  is `true`.
+
+### Internal
+
+- Dev dependencies were refreshed within their existing ranges, taking
+  `pnpm audit` from 36 advisories to 1. The one left is `braces`, reached
+  only through `tsd`, and has no patched release. `node-addon-api` resolves
+  to 8.9.2.
+- `bin/deploy.sh` no longer publishes. `bin/deploy.sh publish` downloads the
+  release's prebuild tarball and publishes only if every platform is
+  present.
+
 ## [2.0.1] - 2026-10-11
 
 ### Security
@@ -195,6 +247,7 @@ Initial release of the fork, from
 - **Replaced the `bindings` package**: native addon loading no longer depends
   on it.
 
+[Unreleased]: https://github.com/jstilwell/libxmljs4/compare/v2.0.1...HEAD
 [2.0.1]: https://github.com/jstilwell/libxmljs4/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/jstilwell/libxmljs4/compare/v1.2.0...v2.0.0
 [1.2.0]: https://github.com/jstilwell/libxmljs4/compare/v1.1.0...v1.2.0
