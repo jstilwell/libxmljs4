@@ -31,58 +31,55 @@ function collectGarbage(minCycles = 3, maxCycles = 10) {
   return usage;
 }
 
+// Node-API runs finalizers on a later event-loop turn, not during gc(), so
+// native memory is only released after yielding. Alternate both.
+async function collectGarbageAndFinalize(cycles = 5) {
+  for (let i = 0; i < cycles; i += 1) {
+    collectGarbage(1, 1);
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  collectGarbage();
+}
+
 describe('memory management', () => {
   beforeEach(() => {
     collectGarbage();
   });
 
-  it('inaccessible document freed', () => {
-    return new Promise((done) => {
-      const xml_memory_before_document = libxml.memoryUsage();
+  it('inaccessible document freed', async () => {
+    const xml_memory_before_document = libxml.memoryUsage();
 
-      for (let i = 0; i < 10; i += 1) {
-        makeDocument();
-      }
-      process.nextTick(() => {
-        collectGarbage();
-        expect(libxml.memoryUsage() <= xml_memory_before_document).toBeTruthy();
-        done();
-      });
-    });
+    for (let i = 0; i < 10; i += 1) {
+      makeDocument();
+    }
+    await collectGarbageAndFinalize();
+    expect(libxml.memoryUsage() <= xml_memory_before_document).toBeTruthy();
   });
 
-  it('inaccessible document freed when node freed', () =>
-    new Promise((done) => {
-      const xml_memory_before_document = libxml.memoryUsage();
-      let nodes = [];
+  it('inaccessible document freed when node freed', async () => {
+    const xml_memory_before_document = libxml.memoryUsage();
+    let nodes = [];
 
-      for (let i = 0; i < 10; i += 1) {
-        nodes.push(makeDocument().get('//center'));
-      }
-      nodes = null;
-      process.nextTick(() => {
-        collectGarbage();
-        expect(libxml.memoryUsage() <= xml_memory_before_document).toBeTruthy();
-        done();
-      });
-    }));
+    for (let i = 0; i < 10; i += 1) {
+      nodes.push(makeDocument().get('//center'));
+    }
+    nodes = null;
+    await collectGarbageAndFinalize();
+    expect(libxml.memoryUsage() <= xml_memory_before_document).toBeTruthy();
+  });
 
-  it('inaccessible document freed after middle nodes proxies', () =>
-    new Promise((done) => {
-      const xml_memory_before_document = libxml.memoryUsage();
-      let doc = makeDocument();
-       
-      let _middle = doc.get('//middle');
-      let inner = doc.get('//inner');
+  it('inaccessible document freed after middle nodes proxies', async () => {
+    const xml_memory_before_document = libxml.memoryUsage();
+    let doc = makeDocument();
 
-      inner.remove(); // v0.14.3, v0.15: proxy ref'd parent but can't unref when destroyed
-      doc = _middle = inner = null;
-      process.nextTick(() => {
-        collectGarbage();
-        expect(libxml.memoryUsage() <= xml_memory_before_document).toBeTruthy();
-        done();
-      });
-    }));
+    let _middle = doc.get('//middle');
+    let inner = doc.get('//inner');
+
+    inner.remove(); // v0.14.3, v0.15: proxy ref'd parent but can't unref when destroyed
+    doc = _middle = inner = null;
+    await collectGarbageAndFinalize();
+    expect(libxml.memoryUsage() <= xml_memory_before_document).toBeTruthy();
+  });
 
   it('inaccessible tree freed', () =>
     new Promise((done) => {
