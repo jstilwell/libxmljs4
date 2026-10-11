@@ -37,6 +37,8 @@ libxmljs4 starts at version `1.0.0` (forked from libxmljs2 `0.37.0`). The major 
 - **XPath namespace and document nodes**: `find('//namespace::*')` returns `Namespace` objects, and an XPath that selects the document node (for example `find('..')` from the root) returns the `Document`. In libxmljs2 both crashed the process.
 - **Invalid arguments throw**: Passing the wrong kind of value, such as `parseXml(null)`, `addChild(null)`, or a non-node to `addNextSibling()`, throws a `TypeError` instead of crashing. String arguments are still converted with `String(value)` as in libxmljs2, so `attr('count', 5)` sets `count="5"`.
 - **Error lists are capped**: `doc.errors` and `doc.validationErrors` hold at most 10,000 entries by default, set by the `maxErrors` option. libxmljs2 built a JS `Error` for every libxml2 diagnostic, so a small malformed input could use hundreds of megabytes.
+- **HTML-only options are ignored by `parseXml`**: `doctype` and `implied` apply to `parseHtml` only. libxml2 uses the same flag bits for different XML options, so in libxmljs2 `parseXml(xml, { doctype: false })` loaded the external DTD and `implied: false` acted as `nsclean`.
+- **Typed arrays and `DataView` sources**: The parse functions read any typed array or `DataView` as raw bytes, like a `Buffer`. A `DataView` crashed libxmljs2.
 - **`old` works**: The documented `old` parser option is an alias for `old10`. In libxmljs2 it was silently ignored.
 - **`SaxTransform` reports listener errors at end of input**: An exception thrown by a listener during the final push (for example in an `endDocument` handler) fails the stream, as it already did for earlier chunks. libxmljs2 swallowed it.
 - **SAX re-entrancy**: Calling `parseString()` or `push()` from inside one of the same parser's event handlers throws an `Error`. Parsing an empty string emits an `error` event.
@@ -52,7 +54,7 @@ libxmljs4 starts at version `1.0.0` (forked from libxmljs2 `0.37.0`). The major 
 - **Narrower Node.js support**: `engines.node` is `^22.22.2 || ^24.15.0 || >=26`.
 - **`node-gyp` is not a runtime dependency**: It is only needed to build from source, so it moved to `devDependencies`. Installing this package no longer pulls it in.
 - **`parseHtmlFragment` leaves its options object unchanged**: libxmljs2 set `doctype` and `implied` to `false` on the object the caller passed in.
-- **SAX parsers are `instanceof EventEmitter`**: `SaxParser` and `SaxPushParser` instances have `EventEmitter.prototype` on their prototype chain. libxmljs2 only copied the EventEmitter methods onto them.
+- **SAX parsers are `instanceof EventEmitter`**: `SaxParser` and `SaxPushParser` instances have `EventEmitter.prototype` on their prototype chain, and `new SaxParser() instanceof SaxParser` is `true` (likewise for `SaxPushParser`). libxmljs2 only copied the EventEmitter methods onto them.
 
 See [CHANGELOG.md](CHANGELOG.md) for the full release history.
 
